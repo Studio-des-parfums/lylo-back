@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Date, Integer, String
 from app.database.connection import Base
 
 
@@ -12,6 +12,7 @@ class Customer(Base):
     phone = Column(String(50))
     days_available = Column(String(50), default="0")
     sessions_available = Column(String(50), default="0")
+    max_date = Column(Date, nullable=True)
 
 
 class TeamMember(Base):

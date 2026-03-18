@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +36,7 @@ class CustomerResponse(BaseModel):
     phone: str | None
     days_available: int
     sessions_available: int
+    max_date: date | None
 
     class Config:
         from_attributes = True
@@ -57,12 +60,18 @@ async def create_customer(body: CustomerCreate, db: AsyncSession = Depends(get_d
     existing = await crud.get_customer_by_email(db, body.email)
     if existing:
         raise HTTPException(status_code=409, detail="Email déjà utilisé")
-    return await crud.create_customer(db, **body.model_dump())
+    data = body.model_dump()
+    if data.get("days_available"):
+        data["max_date"] = date.today() + timedelta(days=data["days_available"])
+    return await crud.create_customer(db, **data)
 
 
 @router.patch("/{customer_id}", response_model=CustomerResponse)
 async def update_customer(customer_id: int, body: CustomerUpdate, db: AsyncSession = Depends(get_db)):
-    updated = await crud.update_customer(db, customer_id, **body.model_dump(exclude_none=True))
+    data = body.model_dump(exclude_none=True)
+    if "days_available" in data and data["days_available"]:
+        data["max_date"] = date.today() + timedelta(days=data["days_available"])
+    updated = await crud.update_customer(db, customer_id, **data)
     if not updated:
         raise HTTPException(status_code=404, detail="Client introuvable")
     return updated
