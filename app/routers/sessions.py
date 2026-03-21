@@ -16,7 +16,7 @@ from app.models.schemas import (
     StartSessionResponse,
 )
 from app.config import get_settings
-from app.services import formula_service, livekit_service, mail_service, redis_service, session_service
+from app.services import formula_service, livekit_service, mail_service, session_store, session_service
 
 router = APIRouter(prefix="/api", tags=["sessions"])
 
@@ -37,7 +37,7 @@ async def start_session(body: StartSessionRequest, db: AsyncSession = Depends(ge
             if not member:
                 raise HTTPException(status_code=404, detail="Email introuvable")
 
-    result = session_service.create_session(
+    result = await session_service.create_session(
         language=body.language,
         voice_gender=body.voice_gender,
         question_count=body.question_count,
@@ -57,11 +57,11 @@ async def get_session(session_id: str):
 
 @router.delete("/session/{session_id}")
 async def delete_session(session_id: str, db: AsyncSession = Depends(get_db)):
-    meta = redis_service.get_session_meta(session_id)
+    meta = session_store.get_session_meta(session_id)
     if meta is None:
         raise HTTPException(status_code=404, detail="Session not found")
     room_name = meta.get("room_name", f"room_{session_id}")
-    redis_service.delete_session(session_id)
+    session_store.delete_session(session_id)
     await livekit_service.delete_room(room_name)
     return {"status": "ok", "session_id": session_id}
 
@@ -73,12 +73,12 @@ async def session_list():
 
 @router.post("/session/{session_id}/save-answer")
 async def save_answer(session_id: str, body: SaveAnswerRequest):
-    if not redis_service.is_profile_complete(session_id):
+    if not session_store.is_profile_complete(session_id):
         raise HTTPException(
             status_code=400,
             detail="Profile incomplete, cannot save answers yet",
         )
-    redis_service.save_answer(
+    session_store.save_answer(
         session_id=session_id,
         question_id=body.question_id,
         question_text=body.question_text,
@@ -90,7 +90,7 @@ async def save_answer(session_id: str, body: SaveAnswerRequest):
 
 @router.get("/session/{session_id}/answers")
 async def get_answers(session_id: str):
-    data = redis_service.get_session_answers(session_id)
+    data = session_store.get_session_answers(session_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Session not found in Redis")
     return data
@@ -98,9 +98,9 @@ async def get_answers(session_id: str):
 
 @router.post("/session/{session_id}/save-profile")
 async def save_profile(session_id: str, body: SaveProfileRequest):
-    redis_service.save_user_profile(session_id, body.field, body.value)
-    complete = redis_service.is_profile_complete(session_id)
-    missing = redis_service.get_missing_profile_fields(session_id)
+    session_store.save_user_profile(session_id, body.field, body.value)
+    complete = session_store.is_profile_complete(session_id)
+    missing = session_store.get_missing_profile_fields(session_id)
     state = "questionnaire" if complete else "collecting_profile"
     return {
         "status": "ok",
@@ -112,10 +112,10 @@ async def save_profile(session_id: str, body: SaveProfileRequest):
 
 @router.get("/session/{session_id}/state")
 async def get_state(session_id: str):
-    state = redis_service.get_session_state(session_id)
-    complete = redis_service.is_profile_complete(session_id)
-    missing = redis_service.get_missing_profile_fields(session_id)
-    mail_available = redis_service.get_selected_formula(session_id) is not None
+    state = session_store.get_session_state(session_id)
+    complete = session_store.is_profile_complete(session_id)
+    missing = session_store.get_missing_profile_fields(session_id)
+    mail_available = session_store.get_selected_formula(session_id) is not None
     return {
         "state": state,
         "profile_complete": complete,
@@ -126,7 +126,7 @@ async def get_state(session_id: str):
 
 @router.get("/session/{session_id}/profile")
 async def get_profile(session_id: str):
-    profile = redis_service.get_user_profile(session_id)
+    profile = session_store.get_user_profile(session_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Profile not found")
     return profile
@@ -134,7 +134,7 @@ async def get_profile(session_id: str):
 
 @router.post("/session/{session_id}/generate-formulas")
 async def generate_formulas(session_id: str, body: GenerateFormulasRequest = GenerateFormulasRequest()):
-    if not redis_service.is_profile_complete(session_id):
+    if not session_store.is_profile_complete(session_id):
         raise HTTPException(
             status_code=400,
             detail="Profile incomplete, cannot generate formulas",
@@ -147,11 +147,16 @@ async def generate_formulas(session_id: str, body: GenerateFormulasRequest = Gen
 
 def _send_formula_mail_bg(session_id: str, formula: dict) -> None:
     internal_email = get_settings().internal_email
-    if internal_email:
-        try:
-            mail_service.send_mail(internal_email, session_id, formula)
-        except Exception as e:
-            print(f"[mail] Erreur lors de l'envoi interne : {e}")
+    if not internal_email:
+        return
+    try:
+        mail_service.send_mail(internal_email, session_id, formula)
+    except Exception as e:
+        print(f"[mail] Erreur envoi mail client interne : {e}")
+    try:
+        mail_service.send_internal_formula_mail(internal_email, session_id, formula)
+    except Exception as e:
+        print(f"[mail] Erreur envoi mail fiche complète : {e}")
 
 
 @router.post("/session/{session_id}/select-formula")
@@ -182,15 +187,18 @@ async def available_ingredients(session_id: str, note_type: str):
 
 
 @router.post("/session/{session_id}/replace-note")
-async def replace_note(session_id: str, body: ReplaceNoteRequest):
+async def replace_note(session_id: str, body: ReplaceNoteRequest, background_tasks: BackgroundTasks):
     result = formula_service.replace_note(
         session_id, body.note_type, body.old_note, body.new_note
     )
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
+    formula = session_store.get_selected_formula(session_id)
+    if formula:
+        background_tasks.add_task(_send_formula_mail_bg, session_id, formula)
     return result
 
 
 @router.get("/sessions/all-answers")
 async def get_all_answers():
-    return redis_service.get_all_sessions()
+    return session_store.get_all_sessions()

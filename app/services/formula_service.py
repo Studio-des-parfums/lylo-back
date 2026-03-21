@@ -26,7 +26,7 @@ from app.data.choice_profile_mapping import (
 )
 from app.data.questions import EN_TO_FR_CHOICES
 from app.config import get_settings
-from app.services import mail_service, redis_service
+from app.services import mail_service, session_store
 
 # ── Chemins ───────────────────────────────────────────────────────────
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -537,14 +537,14 @@ def generate_formulas(session_id: str, force_type: str | None = None) -> dict:
     3. Dérive le profil et le type de formule depuis les notes sélectionnées
     4. Retourne 2 formules avec les notes et les ml selon le type
     """
-    session_data = redis_service.get_session_answers(session_id)
+    session_data = session_store.get_session_answers(session_id)
     if not session_data or not session_data.get("answers"):
         return {"error": "Aucune réponse trouvée", "formulas": []}
 
-    session_meta = redis_service.get_session_meta(session_id)
+    session_meta = session_store.get_session_meta(session_id)
     language = session_meta.get("language", "fr") if session_meta else "fr"
 
-    profile = redis_service.get_user_profile(session_id)
+    profile = session_store.get_user_profile(session_id)
     has_allergies = profile.get("has_allergies", "non") if profile else "non"
     user_allergens_raw = profile.get("allergies", "") if profile else ""
 
@@ -570,7 +570,7 @@ def generate_formulas(session_id: str, force_type: str | None = None) -> dict:
         excluded_names |= formula.pop("_selected_en_names", set())
         formulas.append(formula)
 
-    redis_service.save_generated_formulas(session_id, formulas)
+    session_store.save_generated_formulas(session_id, formulas)
     return {"formulas": formulas}
 
 
@@ -581,14 +581,14 @@ def change_selected_formula_type(session_id: str, formula_type: str) -> dict:
     if formula_type not in _FORMULA_TYPE_CONFIGS:
         return {"error": f"formula_type must be one of: {', '.join(_FORMULA_TYPE_CONFIGS)}"}
 
-    session_data = redis_service.get_session_answers(session_id)
+    session_data = session_store.get_session_answers(session_id)
     if not session_data or not session_data.get("answers"):
         return {"error": "Aucune réponse trouvée"}
 
-    session_meta = redis_service.get_session_meta(session_id)
+    session_meta = session_store.get_session_meta(session_id)
     language = session_meta.get("language", "fr") if session_meta else "fr"
 
-    profile = redis_service.get_user_profile(session_id)
+    profile = session_store.get_user_profile(session_id)
     has_allergies = profile.get("has_allergies", "non") if profile else "non"
     user_allergens_raw = profile.get("allergies", "") if profile else ""
 
@@ -606,13 +606,13 @@ def change_selected_formula_type(session_id: str, formula_type: str) -> dict:
     formula = _build_formula(note_scores, blocked_names, set(), language, force_type=formula_type)
     formula.pop("_selected_en_names", None)
 
-    redis_service.save_selected_formula(session_id, formula)
+    session_store.save_selected_formula(session_id, formula)
     return {"formula": formula}
 
 
 def select_formula(session_id: str, formula_index: int) -> dict:
     """Sélectionne une des 2 formules générées et la stocke dans Redis."""
-    formulas = redis_service.get_generated_formulas(session_id)
+    formulas = session_store.get_generated_formulas(session_id)
     if not formulas:
         return {"error": "No generated formulas found"}
     if formula_index not in (0, 1):
@@ -621,7 +621,7 @@ def select_formula(session_id: str, formula_index: int) -> dict:
         return {"error": "Invalid formula index"}
 
     selected = formulas[formula_index]
-    redis_service.save_selected_formula(session_id, selected)
+    session_store.save_selected_formula(session_id, selected)
 
     return {"formula": selected}
 
@@ -634,7 +634,7 @@ def get_available_ingredients(
     if note_type not in ("top", "heart", "base"):
         return {"error": "note_type must be top, heart, or base"}
 
-    profile = redis_service.get_user_profile(session_id)
+    profile = session_store.get_user_profile(session_id)
     has_allergies = profile.get("has_allergies", "non") if profile else "non"
     user_allergens_raw = profile.get("allergies", "") if profile else ""
 
@@ -646,7 +646,7 @@ def get_available_ingredients(
             if a.strip()
         ]
 
-    session_meta = redis_service.get_session_meta(session_id)
+    session_meta = session_store.get_session_meta(session_id)
     language = session_meta.get("language", "fr") if session_meta else "fr"
     translate_name = (
         (lambda name: INGREDIENT_EN_TO_FR.get(name, name)) if language == "fr"
@@ -681,14 +681,14 @@ def replace_note(
     if note_type not in ("top", "heart", "base"):
         return {"error": "note_type must be top, heart, or base"}
 
-    selected = redis_service.get_selected_formula(session_id)
+    selected = session_store.get_selected_formula(session_id)
     if not selected:
         return {"error": "No formula selected yet"}
 
     note_key = {"top": "top_notes", "heart": "heart_notes", "base": "base_notes"}[note_type]
     formula_type = selected.get("formula_type", "mix")
 
-    session_meta = redis_service.get_session_meta(session_id)
+    session_meta = session_store.get_session_meta(session_id)
     language = session_meta.get("language", "fr") if session_meta else "fr"
     translate_name = (
         (lambda name: INGREDIENT_EN_TO_FR.get(name, name)) if language == "fr"
@@ -736,6 +736,6 @@ def replace_note(
         sizes[f"{target_ml}ml"] = _compute_quantities(details, booster, formula_type, target_ml)
 
     selected["sizes"] = sizes
-    redis_service.save_selected_formula(session_id, selected)
+    session_store.save_selected_formula(session_id, selected)
 
     return {"formula": selected}

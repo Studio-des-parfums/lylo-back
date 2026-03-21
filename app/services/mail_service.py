@@ -5,7 +5,7 @@ from email.mime.text import MIMEText
 from pathlib import Path
 
 from app.config import get_settings
-from app.services import redis_service
+from app.services import session_store
 
 _IMAGES_DIR = Path(__file__).resolve().parent.parent / "static" / "images"
 
@@ -304,13 +304,106 @@ def send_test_mail(to_email: str) -> None:
         server.sendmail(msg["From"], to_email, msg.as_string())
 
 
+def _build_internal_html(formula: dict) -> str:
+    """Build a complete internal recap email with all notes, booster and all sizes."""
+    profile = formula.get("profile", "")
+    description = formula.get("description", "")
+    formula_type = formula.get("formula_type", "")
+    sizes = formula.get("sizes", {})
+
+    sizes_html = ""
+    for size_label in ("10ml", "30ml", "50ml"):
+        size_data = sizes.get(size_label)
+        if not size_data:
+            continue
+
+        def notes_rows(notes: list[dict]) -> str:
+            return "".join(
+                f"<tr>"
+                f'<td style="padding:3px 8px 3px 0;font-size:0.9rem;">{n["name"]}</td>'
+                f'<td style="padding:3px 0;font-size:0.9rem;color:#555;text-align:right;">{n["ml"]} ml</td>'
+                f"</tr>"
+                for n in notes
+            )
+
+        sections = [
+            ("Notes de tête", size_data.get("top_notes", [])),
+            ("Notes de cœur", size_data.get("heart_notes", [])),
+            ("Notes de fond", size_data.get("base_notes", [])),
+            ("Booster", size_data.get("boosters", [])),
+        ]
+
+        sections_html = ""
+        for title, notes in sections:
+            if not notes:
+                continue
+            sections_html += (
+                f'<p style="margin:12px 0 4px;font-size:0.75rem;text-transform:uppercase;'
+                f'letter-spacing:0.08em;color:#aaa;font-weight:bold;">{title}</p>'
+                f'<table style="border-collapse:collapse;width:100%;"><tbody>'
+                f'{notes_rows(notes)}'
+                f"</tbody></table>"
+            )
+
+        sizes_html += (
+            f'<div style="margin-bottom:24px;padding:16px;background:#f9f9f9;border-radius:6px;">'
+            f'<p style="margin:0 0 10px;font-weight:bold;font-size:1rem;">{size_label}</p>'
+            f"{sections_html}"
+            f"</div>"
+        )
+
+    return f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>[Interne] {profile}</title>
+</head>
+<body style="font-family:Arial,sans-serif;background:#faf9f7;margin:0;padding:0;color:#333;">
+  <div style="max-width:600px;margin:0 auto;background:#ffffff;padding:40px 36px;">
+    <p style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;color:#bbb;margin:0 0 16px;">
+      Récapitulatif interne
+    </p>
+    <p style="font-size:1.4rem;font-weight:bold;letter-spacing:0.04em;margin:0 0 4px;">{profile}</p>
+    <p style="font-style:italic;color:#888;font-size:0.92rem;margin:0 0 6px;">{description}</p>
+    <p style="font-size:0.82rem;color:#aaa;margin:0 0 28px;">Type : {formula_type}</p>
+    {sizes_html}
+  </div>
+</body>
+</html>"""
+
+
+def send_internal_formula_mail(to_email: str, session_id: str, formula: dict) -> None:
+    """Send a complete internal recap email with all notes and all sizes."""
+    settings = get_settings()
+    if not settings.smtp_host or not settings.smtp_user:
+        raise RuntimeError("SMTP is not configured")
+
+    html = _build_internal_html(formula)
+
+    session_meta = session_store.get_session_meta(session_id)
+    language = session_meta.get("language", "fr") if session_meta else "fr"
+    profile = formula.get("profile", "formule")
+
+    subject = f"[Lylo Interne] {profile} — Fiche complète"
+
+    msg = MIMEText(html, "html", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = settings.smtp_from or settings.smtp_user
+    msg["To"] = to_email
+
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+        server.starttls()
+        server.login(settings.smtp_user, settings.smtp_password)
+        server.sendmail(msg["From"], to_email, msg.as_string())
+
+
 def send_mail(to_email: str, session_id: str, formula: dict) -> None:
     """Send the formula email to the user."""
     settings = get_settings()
     if not settings.smtp_host or not settings.smtp_user:
         raise RuntimeError("SMTP is not configured")
 
-    session_meta = redis_service.get_session_meta(session_id)
+    session_meta = session_store.get_session_meta(session_id)
     language = session_meta.get("language", "fr") if session_meta else "fr"
     labels = _LABELS.get(language, _LABELS["fr"])
 

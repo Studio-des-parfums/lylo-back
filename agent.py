@@ -7,8 +7,9 @@ import httpx
 from dotenv import load_dotenv
 
 from livekit import rtc
-from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli, function_tool
+from livekit.agents import Agent, AgentSession, JobContext, JobProcess, WorkerOptions, cli, function_tool
 from livekit.plugins import bey, cartesia, deepgram, openai, silero
+
 
 from app.config import get_settings
 
@@ -49,9 +50,14 @@ async def entrypoint(ctx: JobContext):
 
     http = httpx.AsyncClient(base_url=settings.backend_url, timeout=30.0)
 
-    resp = await http.get(f"/api/session/{session_id}")
-    if resp.status_code != 200:
-        print(f"Session {session_id} not found (HTTP {resp.status_code}), agent exiting.")
+    for attempt in range(5):
+        resp = await http.get(f"/api/session/{session_id}")
+        if resp.status_code == 200:
+            break
+        print(f"Session {session_id} not ready yet (attempt {attempt + 1}/5, HTTP {resp.status_code}), retrying...")
+        await asyncio.sleep(1.0)
+    else:
+        print(f"Session {session_id} not found after 5 attempts, agent exiting.")
         await http.aclose()
         return
 
@@ -82,6 +88,10 @@ async def entrypoint(ctx: JobContext):
 
     # --- Standby / pause mode state ---
     paused = [False]
+    # Flag to track if this is the first TTS call (the greeting).
+    # On first call we prepend warmup silence so the Bey avatar DataStream audio
+    # pipeline has time to initialise before real speech arrives.
+    _first_tts_call = [True]
 
     class PausableAgent(Agent):
         """Agent subclass that blocks llm_node while the assistant is in standby mode."""
@@ -92,15 +102,51 @@ async def entrypoint(ctx: JobContext):
             return Agent.default.llm_node(self, chat_ctx, tools, model_settings)
 
         async def tts_node(self, text, model_settings):
-            # Yield all real TTS audio frames from Cartesia
-            async for frame in Agent.default.tts_node(self, text, model_settings):
-                yield frame
+            import time
+            tts_call_id = id(text) % 100000
+            print(f"[TTS_NODE:{tts_call_id}] called at {time.time():.3f}")
 
-            # Append 500ms of silence so the last audio chunk is fully flushed
-            # through the Bey avatar rendering pipeline before the stream closes.
             sample_rate = 24000
             samples_per_channel = 480  # 20ms per frame at 24kHz
             silence_data = bytes(samples_per_channel * 2)  # 16-bit PCM, mono
+
+            # On the very first TTS call (the greeting), prepend 2s of silence so that
+            # the Bey avatar DataStream audio pipeline has time to fully initialise
+            # before real speech arrives. Under bad network conditions Bey's pipeline
+            # needs more time; without this the greeting audio is silently dropped and
+            # playback_finished never fires, leaving the agent hanging.
+            if _first_tts_call[0]:
+                _first_tts_call[0] = False
+                warmup_frames = 100  # 100 × 20ms = 2s
+                print(f"[TTS_NODE:{tts_call_id}] prepending {warmup_frames * 20}ms warmup silence at {time.time():.3f}")
+                for _ in range(warmup_frames):
+                    yield rtc.AudioFrame(
+                        data=silence_data,
+                        sample_rate=sample_rate,
+                        num_channels=1,
+                        samples_per_channel=samples_per_channel,
+                    )
+                print(f"[TTS_NODE:{tts_call_id}] warmup silence done, starting real TTS at {time.time():.3f}")
+
+            frame_count = 0
+            # Yield all real TTS audio frames from Cartesia.
+            # Wrap in try/except so a Cartesia error (rate limit, dropped WebSocket,
+            # invalid voice ID, etc.) doesn't leave the agent stuck in "thinking" state.
+            try:
+                async for frame in Agent.default.tts_node(self, text, model_settings):
+                    if frame_count == 0:
+                        print(f"[TTS_NODE:{tts_call_id}] FIRST real audio frame at {time.time():.3f}")
+                    frame_count += 1
+                    yield frame
+            except Exception as e:
+                print(f"[TTS_NODE:{tts_call_id}] TTS error (Cartesia): {e}")
+                # Fall through to the silence padding so the audio stream closes
+                # cleanly and the agent transitions out of "thinking" state.
+
+            print(f"[TTS_NODE:{tts_call_id}] Cartesia done — {frame_count} frames at {time.time():.3f}, appending trailing silence")
+
+            # Append 500ms of silence so the last audio chunk is fully flushed
+            # through the Bey avatar rendering pipeline before the stream closes.
             for _ in range(25):  # 25 × 20ms = 500ms
                 yield rtc.AudioFrame(
                     data=silence_data,
@@ -108,14 +154,20 @@ async def entrypoint(ctx: JobContext):
                     num_channels=1,
                     samples_per_channel=samples_per_channel,
                 )
+            print(f"[TTS_NODE:{tts_call_id}] trailing silence done at {time.time():.3f}")
 
     # Helper to send state updates to the frontend via LiveKit Data Channel
     async def send_state_update(payload: dict):
-        await ctx.room.local_participant.publish_data(
-            json.dumps(payload).encode("utf-8"),
-            topic="state",
-            reliable=True,
-        )
+        try:
+            await ctx.room.local_participant.publish_data(
+                json.dumps(payload).encode("utf-8"),
+                topic="state",
+                reliable=True,
+            )
+        except Exception:
+            # Room engine may already be closed (e.g. user disconnected while
+            # the agent was still finishing TTS). Silently ignore.
+            pass
 
     # Define the save_user_profile tool for collecting user info before the questionnaire
     @function_tool()
@@ -234,6 +286,7 @@ async def entrypoint(ctx: JobContext):
     async def enter_pause_mode():
         """Puts the assistant in standby mode. Call this IMMEDIATELY after your goodbye message, once the user has no more questions. The assistant will stay silent until called by name. / Met l'assistante en veille. À appeler IMMÉDIATEMENT après le message d'au revoir, quand l'utilisateur n'a plus de questions. L'assistante restera silencieuse jusqu'à être appelée par son prénom."""
         paused[0] = True
+        session.input.set_audio_enabled(False)
         await send_state_update({"type": "state_change", "state": "standby"})
         if is_en:
             return "Standby mode activated. Do not say anything else."
@@ -723,12 +776,10 @@ Lorsque l'utilisateur est satisfait de sa formule personnalisée (après les év
 **Si l'utilisateur a encore des questions :** répondez en tant qu'expert en parfumerie, puis demandez "Avez-vous d'autres questions ?"
 
 **Si l'utilisateur dit qu'il n'a plus de questions :**
-1. Votre message d'au revoir doit OBLIGATOIREMENT contenir les deux éléments suivants, dans la même réplique :
-   - Un au revoir chaleureux et enthousiaste, en vouvoyant.
-   - La phrase de réveil, par exemple : "Et si jamais une question vous vient, dites simplement '{ai_name}, j'ai une question' et je serai là !"
+1. Votre message d'au revoir doit contenir un au revoir chaleureux et enthousiaste, en vouvoyant.
 2. Appelez `enter_pause_mode()` IMMÉDIATEMENT après avoir prononcé ce message. Ne dites RIEN d'autre après l'appel de cet outil.
 
-**Lorsque vous êtes réveillé(e) par la phrase de réveil :**
+**Lorsque vous êtes réveillé(e) :**
 1. Accueillez chaleureusement, ex : "Je vous écoute ! Quelle est votre question ?"
 2. Répondez normalement en tant qu'expert en parfumerie.
 3. Après votre réponse, demandez s'il a d'autres questions.
@@ -786,10 +837,7 @@ RAPPEL IMPORTANT: Vouvoyez TOUJOURS l'utilisateur. Ne le tutoyez JAMAIS."""
             voice=config["voice_id"],
             language=config.get("language", "fr"),
         ),
-        vad=silero.VAD.load(
-            min_speech_duration=0.3,
-            min_silence_duration=1.5,
-        ),
+        vad=ctx.proc.userdata["vad"],
         # Don't allow user to interrupt the agent while it speaks
         allow_interruptions=False,
     )
@@ -806,11 +854,64 @@ RAPPEL IMPORTANT: Vouvoyez TOUJOURS l'utilisateur. Ne le tutoyez JAMAIS."""
     except (asyncio.TimeoutError, Exception) as e:
         print(f"Avatar start failed or timed out, proceeding without avatar: {e}")
 
-    # Connect agent to room
+    # Wait for the Bey avatar to join the room and publish its video track BEFORE
+    # starting the session. If session.start() is called first, the user could speak
+    # during the Bey warm-up window (~5s), triggering an LLM reply whose TTS audio
+    # frames would be dropped (DataStreamAudioOutput discards frames until Bey's video
+    # track is ready), leaving the agent stuck in "thinking" state with no audio.
+    # Wait for Bey to be stably present with a video track for 3 consecutive checks
+    # (1.5s). Bey sometimes disconnects and reconnects right after its first join;
+    # breaking on the first detection causes generate_reply to run while Bey is
+    # mid-reconnect, which drops the audio frames and produces a silent greeting.
+    import time as _time
+    _BEY_IDENTITY = "bey-avatar-agent"
+    bey_stable_count = 0
+    print(f"[BEY_WAIT] Starting Bey stability check at {_time.time():.3f}")
+    for _i in range(50):  # up to 25s
+        bey_participant = next(
+            (p for p in ctx.room.remote_participants.values()
+             if p.identity == _BEY_IDENTITY),
+            None,
+        )
+        if bey_participant and any(
+            pub.kind == rtc.TrackKind.KIND_VIDEO
+            for pub in bey_participant.track_publications.values()
+        ):
+            bey_stable_count += 1
+            print(f"[BEY_WAIT] Bey stable_count={bey_stable_count}/3 at {_time.time():.3f}")
+            if bey_stable_count >= 3:  # stable for 1.5s
+                print(f"[BEY_WAIT] Bey stable! Proceeding. at {_time.time():.3f}")
+                break
+        else:
+            if bey_stable_count > 0:
+                print(f"[BEY_WAIT] Bey lost track, resetting stable_count at {_time.time():.3f}")
+            bey_stable_count = 0
+        await asyncio.sleep(0.5)
+    else:
+        print(f"[BEY_WAIT] Bey avatar not ready for room {ctx.room.name} after 25s, proceeding anyway at {_time.time():.3f}")
+
+    # Extra delay to let Cartesia TTS WebSocket + Bey DataStream fully initialise
+    # before generate_reply() fires the first greeting audio.
+    print(f"[SESSION] Waiting 1.5s for Cartesia + Bey DataStream to be ready at {_time.time():.3f}")
+    await asyncio.sleep(1.5)
+    print(f"[SESSION] Extra wait done at {_time.time():.3f}")
+
+    # Connect agent to room only after Bey is stable, so no user speech can trigger
+    # a TTS response before the avatar's DataStream output is ready.
+    print(f"[SESSION] Calling session.start() at {_time.time():.3f}")
     await session.start(
         room=ctx.room,
         agent=agent,
     )
+    print(f"[SESSION] session.start() returned at {_time.time():.3f}")
+
+    # Notify the frontend of the agent's speaking state so it can show/hide the mic button
+    @session.on("agent_state_changed")
+    def on_agent_state_changed(ev):
+        asyncio.ensure_future(send_state_update({
+            "type": "agent_state",
+            "state": ev.new_state,  # "initializing" | "listening" | "thinking" | "speaking" | "idle"
+        }))
 
     # Listen for control messages from the frontend (e.g. resume button)
     def _on_data_received(data_packet):
@@ -818,6 +919,7 @@ RAPPEL IMPORTANT: Vouvoyez TOUJOURS l'utilisateur. Ne le tutoyez JAMAIS."""
             msg = json.loads(data_packet.data.decode("utf-8"))
             if msg.get("type") == "resume" and paused[0]:
                 paused[0] = False
+                session.input.set_audio_enabled(True)
                 print(f"Agent resumed via frontend button for room: {ctx.room.name}")
                 if is_en:
                     resume_prompt = "The user just clicked a button to resume the conversation. Do NOT say hello or re-introduce yourself. Simply say something like 'I'm listening, what's your question?' or 'Go ahead, I'm here.' Be brief and natural."
@@ -835,7 +937,9 @@ RAPPEL IMPORTANT: Vouvoyez TOUJOURS l'utilisateur. Ne le tutoyez JAMAIS."""
     else:
         greeting = f"Greet the user warmly and simply. Introduce yourself just with your first name ({ai_name}), without mentioning Lilo, Le Studio des Parfums, or that you are a voice assistant. For example: 'Hey, hi! I'm {ai_name}, nice to meet you! And what's your name?' Be natural and friendly."
 
+    print(f"[GREETING] Calling generate_reply() at {_time.time():.3f}")
     await session.generate_reply(instructions=greeting)
+    print(f"[GREETING] generate_reply() returned at {_time.time():.3f}")
 
     # Cleanup when the job shuts down (user disconnects or room closes)
     async def _on_shutdown():
@@ -845,9 +949,18 @@ RAPPEL IMPORTANT: Vouvoyez TOUJOURS l'utilisateur. Ne le tutoyez JAMAIS."""
     ctx.add_shutdown_callback(_on_shutdown)
 
 
+def prewarm(proc: JobProcess):
+    proc.userdata["vad"] = silero.VAD.load(
+        min_speech_duration=0.3,
+        min_silence_duration=1.5,
+    )
+
+
 if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(
-            entrypoint_fnc=entrypoint
+            entrypoint_fnc=entrypoint,
+            prewarm_fnc=prewarm,
+            agent_name="lylo",
         )
     )

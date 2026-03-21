@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
 from app.models.schemas import SendMailRequest
-from app.services import mail_service, redis_service
+from app.services import mail_service, session_store
 
 
 class TestMailRequest(BaseModel):
@@ -13,9 +13,9 @@ router = APIRouter(prefix="/api", tags=["mail"])
 
 
 def _get_formula_or_404(session_id: str) -> dict:
-    if redis_service.get_session_meta(session_id) is None:
+    if session_store.get_session_meta(session_id) is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    formula = redis_service.get_selected_formula(session_id)
+    formula = session_store.get_selected_formula(session_id)
     if formula is None:
         raise HTTPException(status_code=404, detail="No formula selected for this session")
     return formula

@@ -29,9 +29,6 @@ class Settings(BaseSettings):
     # Backend
     backend_url: str = "http://localhost:8000"
 
-    # Redis
-    redis_url: str = "redis://localhost:6379"
-
     # SMTP (email sending — OVH MX Plan)
     smtp_host: str = "ssl0.ovh.net"
     smtp_port: int = 587

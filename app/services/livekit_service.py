@@ -20,6 +20,23 @@ def create_token(identity: str, room: str) -> str:
     return token.to_jwt()
 
 
+async def create_room_with_agent(room_name: str) -> None:
+    """Create a LiveKit room and explicitly dispatch an agent to it."""
+    settings = get_settings()
+    lkapi = api.LiveKitAPI(
+        settings.livekit_url,
+        settings.livekit_api_key,
+        settings.livekit_api_secret,
+    )
+    try:
+        await lkapi.room.create_room(api.CreateRoomRequest(name=room_name))
+        await lkapi.agent_dispatch.create_dispatch(
+            api.CreateAgentDispatchRequest(agent_name="lylo", room=room_name)
+        )
+    finally:
+        await lkapi.aclose()
+
+
 async def delete_room(room_name: str) -> bool:
     """Delete a LiveKit room. Returns True if successful."""
     settings = get_settings()
