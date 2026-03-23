@@ -33,6 +33,9 @@ async def create_room_with_agent(room_name: str) -> None:
         await lkapi.agent_dispatch.create_dispatch(
             api.CreateAgentDispatchRequest(agent_name="lylo", room=room_name)
         )
+    except Exception as e:
+        print(f"[livekit] Erreur création room/dispatch {room_name}: {e}")
+        raise
     finally:
         await lkapi.aclose()
 

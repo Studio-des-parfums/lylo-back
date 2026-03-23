@@ -33,7 +33,11 @@ async def create_session(language: str, voice_gender: str, question_count: int, 
         avatar=avatar,
     )
 
-    await create_room_with_agent(room_name)
+    try:
+        await create_room_with_agent(room_name)
+    except Exception:
+        session_store.delete_session(session_id)
+        raise
 
     return {
         "session_id": session_id,

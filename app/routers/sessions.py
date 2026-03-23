@@ -37,15 +37,20 @@ async def start_session(body: StartSessionRequest, db: AsyncSession = Depends(ge
             if not member:
                 raise HTTPException(status_code=404, detail="Email introuvable")
 
-    result = await session_service.create_session(
-        language=body.language,
-        voice_gender=body.voice_gender,
-        question_count=body.question_count,
-        mode=body.mode,
-        input_mode=body.input_mode,
-        customer_email=body.email,
-        avatar=body.avatar,
-    )
+    try:
+        result = await session_service.create_session(
+            language=body.language,
+            voice_gender=body.voice_gender,
+            question_count=body.question_count,
+            mode=body.mode,
+            input_mode=body.input_mode,
+            customer_email=body.email,
+            avatar=body.avatar,
+        )
+    except Exception as e:
+        if body.email and customer:
+            await crud.update_customer(db, customer.id, sessions_available=int(customer.sessions_available) + 1)
+        raise HTTPException(status_code=500, detail=f"Erreur création session: {e}")
     return result
 
 
