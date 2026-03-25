@@ -1047,14 +1047,26 @@ N'écrivez et n'affichez JAMAIS la syntaxe d'un appel de fonction dans votre ré
                 if is_en:
                     prompt = (
                         f"The user clicked their 2 least liked choices: {values} for question {question_id}. "
-                        f"IMMEDIATELY call save_answer(question_id={question_id}, question_text='{question_text}', "
-                        f"top_2={top_2}, bottom_2={values}), then move naturally to the next question."
+                        f"Now follow Steps 6 and 7 (MANDATORY — never skip): "
+                        f"Step 6: Ask curiously why they dislike their FIRST least liked choice ({values[0] if values else ''}). Wait for their answer, then briefly respond naturally. "
+                        f"Step 7: Then ask why they dislike their SECOND least liked choice ({values[1] if len(values) > 1 else ''}). Wait for their answer, then briefly respond. "
+                        f"ONLY AFTER both justifications are given, follow Step C (mandatory confirmation): summarize clearly and conversationally, "
+                        f"for example 'Alright, so to sum up: your favorites are {top_2} and the ones you like least are {values}. Is that right?' "
+                        f"Wait for the user to confirm. ONLY IF they confirm, call save_answer(question_id={question_id}, "
+                        f"question_text='{question_text}', top_2={top_2}, bottom_2={values}), then move naturally to the next question. "
+                        f"If the user wants to change a choice, handle it naturally, update the relevant choices, redo the summary, and wait for confirmation again."
                     )
                 else:
                     prompt = (
                         f"L'utilisateur a cliqué sur ses 2 choix les moins aimés : {values} pour la question {question_id}. "
-                        f"Appelle IMMÉDIATEMENT save_answer(question_id={question_id}, question_text='{question_text}', "
-                        f"top_2={top_2}, bottom_2={values}), puis enchaîne naturellement sur la question suivante."
+                        f"Suivez maintenant les étapes 6 et 7 (OBLIGATOIRES — ne les sautez jamais) : "
+                        f"Étape 6 : Demandez avec curiosité pourquoi il n'aime pas son PREMIER choix le moins aimé ({values[0] if values else ''}). Attendez sa réponse, puis rebondissez brièvement. "
+                        f"Étape 7 : Puis demandez pourquoi il n'aime pas son DEUXIÈME choix le moins aimé ({values[1] if len(values) > 1 else ''}). Attendez sa réponse, puis rebondissez. "
+                        f"SEULEMENT APRÈS avoir obtenu les deux justifications, suivez l'Étape C (confirmation obligatoire) : récapitulez clairement mais de manière conversationnelle, "
+                        f"par exemple 'D'accord, donc si je résume : vos coups de cœur c'est {top_2} et ceux qui vous parlent le moins c'est {values}. C'est bien ça ?' "
+                        f"Attendez que l'utilisateur confirme. UNIQUEMENT s'il confirme, appelez save_answer(question_id={question_id}, "
+                        f"question_text='{question_text}', top_2={top_2}, bottom_2={values}), puis enchaînez naturellement sur la question suivante. "
+                        f"Si l'utilisateur veut modifier un choix, gérez-le naturellement, mettez à jour les choix, refaites le récapitulatif et attendez la confirmation."
                     )
                 asyncio.ensure_future(session.generate_reply(instructions=prompt))
 
