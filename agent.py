@@ -85,7 +85,7 @@ async def entrypoint(ctx: JobContext):
 
     voice_gender = config.get("voice_gender", "female")
     ai_name = "Rose" if voice_gender == "female" else "Florian"
-    use_avatar = config.get("avatar", True)
+    use_avatar = [config.get("avatar", True)]
     input_mode = config.get("input_mode", "voice")  # "voice" | "click"
 
     # --- Standby / pause mode state ---
@@ -98,11 +98,11 @@ async def entrypoint(ctx: JobContext):
     _first_tts_call = [True]
 
     class PausableAgent(Agent):
-        """Agent subclass that blocks llm_node while the assistant is in standby mode."""
+        """Agent subclass that blocks llm_node while in standby mode."""
 
         def llm_node(self, chat_ctx, tools, model_settings):
             if paused[0]:
-                return None  # stay silent
+                return None  # stay silent in standby
             return Agent.default.llm_node(self, chat_ctx, tools, model_settings)
 
         async def tts_node(self, text, model_settings):
@@ -119,7 +119,7 @@ async def entrypoint(ctx: JobContext):
             # before real speech arrives. Under bad network conditions Bey's pipeline
             # needs more time; without this the greeting audio is silently dropped and
             # playback_finished never fires, leaving the agent hanging.
-            if use_avatar and _first_tts_call[0]:
+            if use_avatar[0] and _first_tts_call[0]:
                 _first_tts_call[0] = False
                 warmup_frames = 100  # 100 × 20ms = 2s
                 print(f"[TTS_NODE:{tts_call_id}] prepending {warmup_frames * 20}ms warmup silence at {time.time():.3f}")
@@ -149,7 +149,7 @@ async def entrypoint(ctx: JobContext):
 
             print(f"[TTS_NODE:{tts_call_id}] Cartesia done — {frame_count} frames at {time.time():.3f}, appending trailing silence")
 
-            if use_avatar:
+            if use_avatar[0]:
                 # Append 500ms of silence so the last audio chunk is fully flushed
                 # through the Bey avatar rendering pipeline before the stream closes.
                 for _ in range(25):  # 25 × 20ms = 500ms
@@ -200,7 +200,100 @@ async def entrypoint(ctx: JobContext):
             return f"Profile updated: {field} = {value}"
         return f"Profil mis à jour: {field} = {value}"
 
-    # Notify the frontend of the user's 2 favorite choices so it can hide those cards
+    # ── Step-by-step questionnaire progress events ──────────────────────────
+
+    @function_tool()
+    async def notify_asking_top_2(question_id: int):
+        """Call this ONCE, RIGHT BEFORE asking the user for their 2 favorite choices (Step A). / Appelle cette fonction UNE SEULE FOIS, JUSTE AVANT de demander les 2 choix préférés (Étape A)."""
+        await send_state_update({
+            "type": "step_asking_top_2",
+            "state": "questionnaire",
+            "question_id": question_id,
+        })
+        if is_en:
+            return "Frontend notified: asking for top 2."
+        return "Frontend notifié : demande des 2 favoris."
+
+    @function_tool()
+    async def notify_justification_top_1(question_id: int, choice: str):
+        """Call this RIGHT BEFORE asking why the user likes their FIRST favorite choice (Step A, step 3). / Appelle cette fonction JUSTE AVANT de demander pourquoi l'utilisateur aime son PREMIER choix préféré (Étape A, étape 3)."""
+        await send_state_update({
+            "type": "step_justification_top_1",
+            "state": "questionnaire",
+            "question_id": question_id,
+            "choice": choice,
+        })
+        if is_en:
+            return f"Frontend notified: asking justification for top choice 1 ({choice})."
+        return f"Frontend notifié : demande justification favori 1 ({choice})."
+
+    @function_tool()
+    async def notify_justification_top_2(question_id: int, choice: str):
+        """Call this RIGHT BEFORE asking why the user likes their SECOND favorite choice (Step A, step 4). / Appelle cette fonction JUSTE AVANT de demander pourquoi l'utilisateur aime son DEUXIÈME choix préféré (Étape A, étape 4)."""
+        await send_state_update({
+            "type": "step_justification_top_2",
+            "state": "questionnaire",
+            "question_id": question_id,
+            "choice": choice,
+        })
+        if is_en:
+            return f"Frontend notified: asking justification for top choice 2 ({choice})."
+        return f"Frontend notifié : demande justification favori 2 ({choice})."
+
+    @function_tool()
+    async def notify_asking_bottom_2(question_id: int, top_2: list[str]):
+        """Call this RIGHT BEFORE asking the user for their 2 least liked choices (Step B, step 5). / Appelle cette fonction JUSTE AVANT de demander les 2 choix les moins aimés (Étape B, étape 5)."""
+        await send_state_update({
+            "type": "step_asking_bottom_2",
+            "state": "questionnaire",
+            "question_id": question_id,
+            "top_2": top_2,
+        })
+        if is_en:
+            return "Frontend notified: asking for bottom 2."
+        return "Frontend notifié : demande des 2 moins aimés."
+
+    @function_tool()
+    async def notify_justification_bottom_1(question_id: int, choice: str):
+        """Call this RIGHT BEFORE asking why the user dislikes their FIRST least liked choice (Step B, step 6). / Appelle cette fonction JUSTE AVANT de demander pourquoi l'utilisateur n'aime pas son PREMIER choix le moins aimé (Étape B, étape 6)."""
+        await send_state_update({
+            "type": "step_justification_bottom_1",
+            "state": "questionnaire",
+            "question_id": question_id,
+            "choice": choice,
+        })
+        if is_en:
+            return f"Frontend notified: asking justification for bottom choice 1 ({choice})."
+        return f"Frontend notifié : demande justification moins aimé 1 ({choice})."
+
+    @function_tool()
+    async def notify_justification_bottom_2(question_id: int, choice: str):
+        """Call this RIGHT BEFORE asking why the user dislikes their SECOND least liked choice (Step B, step 7). / Appelle cette fonction JUSTE AVANT de demander pourquoi l'utilisateur n'aime pas son DEUXIÈME choix le moins aimé (Étape B, étape 7)."""
+        await send_state_update({
+            "type": "step_justification_bottom_2",
+            "state": "questionnaire",
+            "question_id": question_id,
+            "choice": choice,
+        })
+        if is_en:
+            return f"Frontend notified: asking justification for bottom choice 2 ({choice})."
+        return f"Frontend notifié : demande justification moins aimé 2 ({choice})."
+
+    @function_tool()
+    async def notify_awaiting_confirmation(question_id: int, top_2: list[str], bottom_2: list[str]):
+        """Call this RIGHT BEFORE reading the summary and asking the user to confirm their choices (Step C, step 8). / Appelle cette fonction JUSTE AVANT de lire le récapitulatif et demander la confirmation (Étape C, étape 8)."""
+        await send_state_update({
+            "type": "step_awaiting_confirmation",
+            "state": "questionnaire",
+            "question_id": question_id,
+            "top_2": top_2,
+            "bottom_2": bottom_2,
+        })
+        if is_en:
+            return f"Frontend notified: awaiting confirmation for question {question_id} — top: {top_2}, bottom: {bottom_2}."
+        return f"Frontend notifié : en attente de confirmation question {question_id} — favoris: {top_2}, moins aimés: {bottom_2}."
+
+    # ── Notify the frontend of the user's 2 favorite choices (hides those cards) ──
     @function_tool()
     async def notify_top_2(question_id: int, top_2: list[str]):
         """Notifies the frontend of the user's 2 favorite choices for the current question. Call this IMMEDIATELY after identifying the 2 favorites, BEFORE asking for the least liked. / Notifie le frontend des 2 choix préférés de l'utilisateur. Appelle cette fonction IMMÉDIATEMENT après avoir identifié les 2 favoris, AVANT de demander les moins aimés."""
@@ -240,6 +333,17 @@ async def entrypoint(ctx: JobContext):
         if is_en:
             return f"Answer saved: question {question_id} — favorites: {top_2}, least liked: {bottom_2}"
         return f"Réponse sauvegardée: question {question_id} — préférés: {top_2}, moins aimés: {bottom_2}"
+
+    @function_tool()
+    async def notify_asking_intensity():
+        """Call this ONCE, RIGHT BEFORE asking the user their fragrance intensity preference (frais/mix/puissant). Signals the frontend to hide the questionnaire cards. / Appelle cette fonction UNE SEULE FOIS, JUSTE AVANT de demander la préférence d'intensité (frais/mix/puissant). Signale au frontend de masquer les cartes du questionnaire."""
+        await send_state_update({
+            "type": "step_asking_intensity",
+            "state": "questionnaire",
+        })
+        if is_en:
+            return "Frontend notified: asking fragrance intensity preference."
+        return "Frontend notifié : demande de préférence d'intensité."
 
     # Define the generate_formulas tool for the LLM to call after all questions
     @function_tool()
@@ -358,24 +462,24 @@ async def entrypoint(ctx: JobContext):
     # Build click-mode prompt injections for Phase 2 (empty strings in voice mode)
     if input_mode == "click":
         click_step_a_en = (
-            "   **CLICK MODE**: Before asking for favorites, call `request_top_2_click(question_id)` "
-            "to mute the mic and enable card selection. The choices will be sent to you automatically "
-            "via a system message — do NOT wait for a vocal answer.\n"
+            "   **HYBRID MODE**: Before asking for favorites, call `request_top_2_click(question_id)` "
+            "to signal the interface to show a 'Reply' button. The user will press it to open their mic, "
+            "speak their 2 favorite choices, then press again to close. Wait for their vocal answer normally.\n"
         )
         click_step_b_en = (
-            "   **CLICK MODE**: Before asking for least liked, call `request_bottom_2_click(question_id)` "
-            "to mute the mic and enable card selection. The choices will be sent to you automatically "
-            "via a system message — do NOT wait for a vocal answer.\n"
+            "   **HYBRID MODE**: Before asking for least liked, call `request_bottom_2_click(question_id)` "
+            "to signal the interface to show a 'Reply' button. The user will press it to open their mic, "
+            "speak their 2 least liked choices, then press again to close. Wait for their vocal answer normally.\n"
         )
         click_step_a_fr = (
-            "   **MODE CLICK** : Avant de demander les favoris, appelez `request_top_2_click(question_id)` "
-            "pour couper le micro et activer la sélection par clic. Les choix vous seront transmis "
-            "automatiquement via un message système — n'attendez PAS de réponse vocale.\n"
+            "   **MODE HYBRIDE** : Avant de demander les favoris, appelez `request_top_2_click(question_id)` "
+            "pour signaler à l'interface d'afficher un bouton 'Répondre'. L'utilisateur appuiera dessus pour ouvrir "
+            "son micro, énoncera ses 2 choix préférés, puis appuiera à nouveau pour fermer. Attendez sa réponse vocale normalement.\n"
         )
         click_step_b_fr = (
-            "   **MODE CLICK** : Avant de demander les moins aimés, appelez `request_bottom_2_click(question_id)` "
-            "pour couper le micro et activer la sélection par clic. Les choix vous seront transmis "
-            "automatiquement via un message système — n'attendez PAS de réponse vocale.\n"
+            "   **MODE HYBRIDE** : Avant de demander les moins aimés, appelez `request_bottom_2_click(question_id)` "
+            "pour signaler à l'interface d'afficher un bouton 'Répondre'. L'utilisateur appuiera dessus pour ouvrir "
+            "son micro, énoncera ses 2 choix les moins aimés, puis appuiera à nouveau pour fermer. Attendez sa réponse vocale normalement.\n"
         )
     else:
         click_step_a_en = click_step_b_en = click_step_a_fr = click_step_b_fr = ""
@@ -564,35 +668,36 @@ You must ask ONLY the questions listed below, one at a time, in order. There are
 For EACH question, follow these steps in order:
 
 **Step A — The 2 favorite choices:**
-1. Ask the question in a natural and engaging way, integrating the request for **2 favorites** directly into a single sentence. NEVER ask the question first and then ask for favorites as a separate sentence — that would require the user to speak twice. NEVER list or read out the choices — the user can already see them. For example, instead of "Which destination appeals to you the most? Among the choices, which 2 do you prefer?" say: "Among the destinations you can see, which 2 appeal to you the most?"
+1. Call `notify_asking_top_2(question_id)`, then ask the question in a natural and engaging way, integrating the request for **2 favorites** directly into a single sentence. NEVER ask the question first and then ask for favorites as a separate sentence — that would require the user to speak twice. NEVER list or read out the choices — the user can already see them. For example, instead of "Which destination appeals to you the most? Among the choices, which 2 do you prefer?" say: "Among the destinations you can see, which 2 appeal to you the most?"
 {click_step_a_en}2. Once the 2 choices are identified, IMMEDIATELY call `notify_top_2(question_id, top_2=[X, Y])` to notify the frontend (so it can hide those cards).
-3. Ask them curiously **why** they like the **first choice**. Listen to their justification and briefly respond naturally.
-4. Then ask them **why** they like the **second choice**. Same thing, listen and respond.
+3. Call `notify_justification_top_1(question_id, choice=X)`, then ask them curiously **why** they like the **first choice**. Listen to their justification and briefly respond naturally.
+4. Call `notify_justification_top_2(question_id, choice=Y)`, then ask them **why** they like the **second choice**. Same thing, listen and respond.
 
 **Step B — The 2 least liked choices:**
-5. Transition naturally, for example "And among the remaining choices you can see, which 2 appeal to you the least?" The user must choose from the **remaining 4 choices only** (excluding their 2 favorites). NEVER accept a favorite as a least liked choice. If the user picks one of their favorites, point it out with humor, e.g. "Wait, you just told me you loved that one! You can only pick from the others."
-{click_step_b_en}6. (MANDATORY) Once you have both least liked choices, ask them curiously **why** they dislike the **first least liked choice** — one question, wait for their answer, then briefly respond naturally. You MUST wait for their answer before continuing.
-7. (MANDATORY) Then ask them **why** they dislike the **second least liked choice** — one question, wait for their answer, then briefly respond. You MUST wait for their answer before continuing.
+5. Call `notify_asking_bottom_2(question_id, top_2=[X, Y])`, then transition naturally, for example "And among the remaining choices you can see, which 2 appeal to you the least?" The user must choose from the **remaining 4 choices only** (excluding their 2 favorites). NEVER accept a favorite as a least liked choice. If the user picks one of their favorites, point it out with humor, e.g. "Wait, you just told me you loved that one! You can only pick from the others."
+{click_step_b_en}6. (MANDATORY) Once you have both least liked choices, call `notify_justification_bottom_1(question_id, choice=A)`, then ask them curiously **why** they dislike the **first least liked choice** — one question, wait for their answer, then briefly respond naturally. You MUST wait for their answer before continuing.
+7. (MANDATORY) Call `notify_justification_bottom_2(question_id, choice=B)`, then ask them **why** they dislike the **second least liked choice** — one question, wait for their answer, then briefly respond. You MUST wait for their answer before continuing.
 ⚠️ NEVER skip steps 6 and 7. NEVER group both justifications into a single question. NEVER move to Step C before the user has justified BOTH least liked choices.
 
 **Step C — Confirmation (MANDATORY):**
-8. You MUST ALWAYS summarize before saving. Summarize clearly but conversationally, for example "Alright, so to sum up: your favorites are [X] and [Y], and the ones that appeal to you least are [A] and [B]. Is that right?"
+8. Call `notify_awaiting_confirmation(question_id, top_2=[X, Y], bottom_2=[A, B])`, then summarize clearly but conversationally, for example "Alright, so to sum up: your favorites are [X] and [Y], and the ones that appeal to you least are [A] and [B]. Is that right?"
 9. If the user **confirms**: IMMEDIATELY call `save_answer(question_id, question_text, top_2=[X, Y], bottom_2=[A, B])`. Justifications are NOT saved, they only serve to make the conversation lively and natural.
 10. If the user wants to **modify choices**: handle it naturally. The user may say things like "I want to swap City for Beach", "Actually change my second favorite", "I want to change my choices", etc. When this happens:
    - Acknowledge the change warmly, e.g. "No problem, let's fix that!"
    - Update the relevant choice(s) based on what they say
    - If a favorite is swapped, call `notify_top_2` again with the updated favorites
-   - Redo the summary with the corrected choices and ask for confirmation again
+   - Call `notify_awaiting_confirmation` again with the corrected choices, redo the summary, and ask for confirmation again
    - NEVER save until the user confirms the final summary
 11. Move on to the next question with a natural transition.
 
 Questionnaire rules:
 - Ask ONE question at a time.
 - The user answers out loud. The transcription may be imperfect (e.g., "beach" → "beach.", "Beach", "the beach", "beech", etc.). Accept the answer if it clearly matches one of the choices, even with variations in case, punctuation, or phrasing.
+- CRITICAL — CHOICE VALIDATION: Before proceeding, ALWAYS verify that every choice mentioned by the user exists in the available choices list for that question. If a word does not match any available choice (even approximately), it is a transcription error — do NOT proceed. Instead, repeat back what you heard and ask for confirmation, e.g. "I heard 'vide' and 'forêt' — but 'vide' doesn't seem to be one of the choices. Did you mean 'ville' perhaps? Could you confirm your 2 choices?" NEVER call notify_top_2 or notify_justification with a choice that is not in the available list.
 - If the answer doesn't match ANY choice, kindly suggest the available options.
 - NEVER move to the next question without having called save_answer after confirmation.
 - CRITICAL — QUESTION ORDER: You MUST ask questions strictly in the order they appear in the list above, one by one. NEVER ask a question from a later position while the current one is not fully completed (steps A, B, and C). If you catch yourself about to ask a question that doesn't match your current position in the list, STOP and go back to the correct question. The question you speak MUST always match the question at your current position.
-- When all {num_questions} question(s) listed above are done, you MUST ask ONE final question before generating formulas: ask the user their fragrance intensity preference in a natural way, for example: "Before I create your formulas, one last thing — do you prefer fresh and light fragrances, powerful and intense ones, or a mix of both?" Wait for their answer, then call `generate_formulas(formula_type=...)` with 'frais' (fresh/light), 'puissant' (powerful/intense), or 'mix' (mix of both) accordingly. If the user says they don't know, can't decide, or asks you to choose for them (e.g. "I don't know", "advise me", "surprise me", "you choose"), recommend 'mix' as the balanced option — e.g. "In that case, I'd recommend a mix — it's the most versatile option!" — and call `generate_formulas(formula_type='mix')`. Move to Phase 3.
+- When all {num_questions} question(s) listed above are done, you MUST ask ONE final question before generating formulas: call `notify_asking_intensity()` FIRST, then ask the user their fragrance intensity preference in a natural way, for example: "Before I create your formulas, one last thing — do you prefer fresh and light fragrances, powerful and intense ones, or a mix of both?" Wait for their answer, then call `generate_formulas(formula_type=...)` with 'frais' (fresh/light), 'puissant' (powerful/intense), or 'mix' (mix of both) accordingly. If the user says they don't know, can't decide, or asks you to choose for them (e.g. "I don't know", "advise me", "surprise me", "you choose"), recommend 'mix' as the balanced option — e.g. "In that case, I'd recommend a mix — it's the most versatile option!" — and call `generate_formulas(formula_type='mix')`. Move to Phase 3.
 - You MUST speak in English at all times.
 - NEVER read or list the choices out loud. The user can already see them on screen. If the user hesitates, invite them to look, for example: "Take a look at the choices in front of you and tell me which ones catch your eye."
 
@@ -750,35 +855,36 @@ Tu dois poser UNIQUEMENT les questions listées ci-dessous, une par une, dans l'
 Pour CHAQUE question, suis ces étapes dans l'ordre:
 
 **Étape A — Les 2 choix préférés:**
-1. Posez la question de façon naturelle et engageante, en intégrant directement la demande des **2 favoris** dans une seule phrase. Ne posez JAMAIS la question du questionnaire d'abord et ne demandez PAS ensuite les 2 préférés dans une phrase séparée — cela obligerait l'utilisateur à parler deux fois. Ne lisez et n'énumérez JAMAIS les choix — l'utilisateur les voit déjà devant lui. Par exemple, au lieu de "Quelle destination vous attire le plus ? Parmi les choix, lesquels préférez-vous ?" dites : "Parmi les destinations que vous voyez, lesquelles vous attirent le plus ? Dites-moi vos 2 coups de cœur !"
+1. Appelez `notify_asking_top_2(question_id)`, puis posez la question de façon naturelle et engageante, en intégrant directement la demande des **2 favoris** dans une seule phrase. Ne posez JAMAIS la question du questionnaire d'abord et ne demandez PAS ensuite les 2 préférés dans une phrase séparée — cela obligerait l'utilisateur à parler deux fois. Ne lisez et n'énumérez JAMAIS les choix — l'utilisateur les voit déjà devant lui. Par exemple, au lieu de "Quelle destination vous attire le plus ? Parmi les choix, lesquels préférez-vous ?" dites : "Parmi les destinations que vous voyez, lesquelles vous attirent le plus ? Dites-moi vos 2 coups de cœur !"
 {click_step_a_fr}2. Une fois les 2 choix identifiés, appelez IMMÉDIATEMENT `notify_top_2(question_id, top_2=[X, Y])` pour notifier le frontend (afin qu'il puisse masquer ces cartes).
-3. Demandez-lui avec curiosité **pourquoi** il aime le **premier choix**. Écoutez sa justification et rebondissez brièvement dessus de manière naturelle.
-4. Puis demandez-lui **pourquoi** il aime le **deuxième choix**. Pareil, écoutez et rebondissez.
+3. Appelez `notify_justification_top_1(question_id, choice=X)`, puis demandez-lui avec curiosité **pourquoi** il aime le **premier choix**. Écoutez sa justification et rebondissez brièvement dessus de manière naturelle.
+4. Appelez `notify_justification_top_2(question_id, choice=Y)`, puis demandez-lui **pourquoi** il aime le **deuxième choix**. Pareil, écoutez et rebondissez.
 
 **Étape B — Les 2 choix les moins aimés:**
-5. Enchaînez naturellement, par exemple "Et parmi les choix restants que vous voyez, lesquels vous attirent le moins ?" L'utilisateur doit choisir parmi les **4 choix restants uniquement** (en excluant ses 2 favoris). N'acceptez JAMAIS un favori comme choix le moins aimé. Si l'utilisateur choisit un de ses favoris, relevez-le avec humour, ex : "Attendez, vous venez de me dire que vous adoriez celui-là ! Choisissez plutôt parmi les autres."
-{click_step_b_fr}6. (OBLIGATOIRE) Une fois les 2 choix les moins aimés identifiés, demandez-lui avec curiosité **pourquoi** il n'aime pas le **premier choix le moins aimé** — une seule question, attendez sa réponse, puis rebondissez brièvement. Vous DEVEZ attendre sa réponse avant de continuer.
-7. (OBLIGATOIRE) Puis demandez-lui **pourquoi** il n'aime pas le **deuxième choix le moins aimé** — une seule question, attendez sa réponse, puis rebondissez. Vous DEVEZ attendre sa réponse avant de continuer.
+5. Appelez `notify_asking_bottom_2(question_id, top_2=[X, Y])`, puis enchaînez naturellement, par exemple "Et parmi les choix restants que vous voyez, lesquels vous attirent le moins ?" L'utilisateur doit choisir parmi les **4 choix restants uniquement** (en excluant ses 2 favoris). N'acceptez JAMAIS un favori comme choix le moins aimé. Si l'utilisateur choisit un de ses favoris, relevez-le avec humour, ex : "Attendez, vous venez de me dire que vous adoriez celui-là ! Choisissez plutôt parmi les autres."
+{click_step_b_fr}6. (OBLIGATOIRE) Une fois les 2 choix les moins aimés identifiés, appelez `notify_justification_bottom_1(question_id, choice=A)`, puis demandez-lui avec curiosité **pourquoi** il n'aime pas le **premier choix le moins aimé** — une seule question, attendez sa réponse, puis rebondissez brièvement. Vous DEVEZ attendre sa réponse avant de continuer.
+7. (OBLIGATOIRE) Appelez `notify_justification_bottom_2(question_id, choice=B)`, puis demandez-lui **pourquoi** il n'aime pas le **deuxième choix le moins aimé** — une seule question, attendez sa réponse, puis rebondissez. Vous DEVEZ attendre sa réponse avant de continuer.
 ⚠️ Ne sautez JAMAIS les étapes 6 et 7. Ne regroupez JAMAIS les deux justifications en une seule question. Ne passez JAMAIS à l'Étape C avant que l'utilisateur ait justifié SES DEUX choix les moins aimés.
 
 **Étape C — Confirmation (OBLIGATOIRE):**
-8. Vous DEVEZ TOUJOURS récapituler avant de sauvegarder. Récapitulez clairement mais de manière conversationnelle, par exemple "D'accord, donc si je résume : vos coups de cœur c'est [X] et [Y], et ceux qui vous parlent le moins c'est [A] et [B]. C'est bien ça ?"
+8. Appelez `notify_awaiting_confirmation(question_id, top_2=[X, Y], bottom_2=[A, B])`, puis récapitulez clairement mais de manière conversationnelle, par exemple "D'accord, donc si je résume : vos coups de cœur c'est [X] et [Y], et ceux qui vous parlent le moins c'est [A] et [B]. C'est bien ça ?"
 9. Si l'utilisateur **confirme**: appelez IMMÉDIATEMENT `save_answer(question_id, question_text, top_2=[X, Y], bottom_2=[A, B])`. Les justifications ne sont PAS sauvegardées, elles servent uniquement à rendre la conversation vivante et naturelle.
 10. Si l'utilisateur veut **modifier ses choix**: gérez-le naturellement. L'utilisateur peut dire des choses comme "je veux remplacer la ville par plage", "change mon deuxième préféré", "je veux changer mes choix", etc. Dans ce cas :
    - Accusez réception chaleureusement, ex : "Pas de souci, on corrige ça !"
    - Mettez à jour le(s) choix concerné(s) selon ce qu'il dit
    - Si un favori est changé, appelez à nouveau `notify_top_2` avec les favoris mis à jour
-   - Refaites le récapitulatif avec les choix corrigés et redemandez confirmation
+   - Appelez à nouveau `notify_awaiting_confirmation` avec les choix corrigés, refaites le récapitulatif et redemandez confirmation
    - Ne sauvegardez JAMAIS tant que l'utilisateur n'a pas confirmé le récapitulatif final
 11. Enchaînez sur la question suivante avec une transition naturelle.
 
 Règles du questionnaire:
 - Posez UNE SEULE question à la fois.
 - L'utilisateur répond à voix haute. La transcription peut être imparfaite (ex: "plage" → "plage.", "Plage", "la plage", "plaj", etc.). Acceptez la réponse si elle correspond clairement à un des choix, même avec des variations de casse, ponctuation ou formulation.
+- CRITIQUE — VALIDATION DES CHOIX : Avant de continuer, vérifiez TOUJOURS que chaque choix mentionné par l'utilisateur existe bien dans la liste des choix disponibles pour cette question. Si un mot ne correspond à aucun choix disponible (même approximativement), c'est une erreur de transcription — ne continuez pas. Répétez ce que vous avez entendu et demandez confirmation, ex : "J'ai entendu 'vide' et 'forêt' — mais 'vide' ne semble pas faire partie des choix. Vouliez-vous dire 'ville' peut-être ? Pouvez-vous confirmer vos 2 choix ?" N'appelez JAMAIS notify_top_2 ni notify_justification avec un choix qui ne figure pas dans la liste disponible.
 - Si la réponse ne correspond à AUCUN choix, proposez gentiment les options disponibles.
 - Ne passez JAMAIS à la question suivante sans avoir appelé save_answer après confirmation.
 - CRITIQUE — ORDRE DES QUESTIONS : Vous DEVEZ poser les questions strictement dans l'ordre de la liste ci-dessus, une par une. Ne posez JAMAIS une question d'une position ultérieure tant que la question en cours n'est pas entièrement traitée (étapes A, B et C). Si vous vous apprêtez à poser une question qui ne correspond pas à votre position actuelle dans la liste, ARRÊTEZ-VOUS et revenez à la bonne question. La question posée doit TOUJOURS correspondre à votre position actuelle dans la liste.
-- Quand les {num_questions} question(s) listées ci-dessus sont terminées, vous DEVEZ poser UNE dernière question avant de générer les formules : demandez à l'utilisateur sa préférence de type de parfum de façon naturelle, par exemple : "Avant de créer vos formules, une dernière chose — vous préférez des parfums plutôt frais et légers, plutôt puissants et intenses, ou un mix des deux ?" Attendez sa réponse, puis appelez `generate_formulas(formula_type=...)` avec 'frais', 'puissant' ou 'mix' selon sa réponse. Si l'utilisateur ne sait pas, hésite, ou vous laisse choisir (ex : "je sais pas", "conseillez-moi", "vous choisissez", "surprenez-moi"), recommandez le 'mix' comme option équilibrée — ex : "Dans ce cas, je vous conseille le mix — c'est l'option la plus polyvalente !" — et appelez `generate_formulas(formula_type='mix')`. Passez à la Phase 3.
+- Quand les {num_questions} question(s) listées ci-dessus sont terminées, vous DEVEZ poser UNE dernière question avant de générer les formules : appelez D'ABORD `notify_asking_intensity()`, puis demandez à l'utilisateur sa préférence de type de parfum de façon naturelle, par exemple : "Avant de créer vos formules, une dernière chose — vous préférez des parfums plutôt frais et légers, plutôt puissants et intenses, ou un mix des deux ?" Attendez sa réponse, puis appelez `generate_formulas(formula_type=...)` avec 'frais', 'puissant' ou 'mix' selon sa réponse. Si l'utilisateur ne sait pas, hésite, ou vous laisse choisir (ex : "je sais pas", "conseillez-moi", "vous choisissez", "surprenez-moi"), recommandez le 'mix' comme option équilibrée — ex : "Dans ce cas, je vous conseille le mix — c'est l'option la plus polyvalente !" — et appelez `generate_formulas(formula_type='mix')`. Passez à la Phase 3.
 - Parle en français.
 - Ne lisez et n'énumérez JAMAIS les choix à voix haute. L'utilisateur les voit déjà à l'écran. Si l'utilisateur hésite, invitez-le à les regarder, par exemple : "Jetez un œil aux choix devant vous et dites-moi ce qui vous attire."
 
@@ -900,8 +1006,18 @@ N'écrivez et n'affichez JAMAIS la syntaxe d'un appel de fonction dans votre ré
             return f"Frontend notified: mic muted, waiting for user to click 2 least liked choices for question {question_id}."
         return f"Frontend notifié : micro coupé, en attente du clic de l'utilisateur pour ses 2 choix les moins aimés (question {question_id})."
 
-    base_tools = [save_user_profile, notify_top_2, save_answer, generate_formulas,
-                  select_formula, change_formula_type, get_available_ingredients, replace_note, enter_pause_mode]
+    base_tools = [
+        save_user_profile,
+        notify_asking_top_2, notify_top_2,
+        notify_justification_top_1, notify_justification_top_2,
+        notify_asking_bottom_2,
+        notify_justification_bottom_1, notify_justification_bottom_2,
+        notify_awaiting_confirmation,
+        save_answer,
+        notify_asking_intensity,
+        generate_formulas, select_formula, change_formula_type,
+        get_available_ingredients, replace_note, enter_pause_mode,
+    ]
     click_tools = [request_top_2_click, request_bottom_2_click] if input_mode == "click" else []
 
     agent = PausableAgent(
@@ -927,7 +1043,7 @@ N'écrivez et n'affichez JAMAIS la syntaxe d'un appel de fonction dans votre ré
         allow_interruptions=False,
     )
 
-    if use_avatar:
+    if use_avatar[0]:
         avatar_id = pick_avatar(voice_gender)
         avatar = bey.AvatarSession(avatar_id=avatar_id)
 
@@ -1033,61 +1149,21 @@ N'écrivez et n'affichez JAMAIS la syntaxe d'un appel de fonction dans votre ré
                     resume_prompt = "L'utilisateur vient de cliquer sur un bouton pour reprendre la conversation. Ne dites surtout pas bonjour et ne vous présentez pas à nouveau. Dites simplement quelque chose comme 'Je vous écoute, quelle est votre question ?' ou 'Allez-y, je suis là.' Soyez bref(ve) et naturel(le)."
                 asyncio.ensure_future(session.generate_reply(instructions=resume_prompt))
 
-            elif msg_type == "questionnaire_top_2" and input_mode == "click":
-                question_id = msg.get("question_id")
-                values = msg.get("values", [])
-                print(f"[CLICK] top_2 received for question {question_id}: {values}")
-                if is_en:
-                    prompt = (
-                        f"The user clicked their 2 favorite choices: {values} for question {question_id}. "
-                        f"IMMEDIATELY call notify_top_2(question_id={question_id}, top_2={values}), "
-                        f"then ask why they like their first favorite. Continue naturally."
-                    )
-                else:
-                    prompt = (
-                        f"L'utilisateur a cliqué sur ses 2 choix préférés : {values} pour la question {question_id}. "
-                        f"Appelle IMMÉDIATEMENT notify_top_2(question_id={question_id}, top_2={values}), "
-                        f"puis demande-lui pourquoi il aime son premier favori. Continue naturellement."
-                    )
-                asyncio.ensure_future(session.generate_reply(instructions=prompt))
-
-            elif msg_type == "questionnaire_bottom_2" and input_mode == "click":
-                question_id = msg.get("question_id")
-                values = msg.get("values", [])
-                top_2 = msg.get("top_2", [])
-                question = next((q for q in config["questions"] if q["id"] == question_id), None)
-                question_text = question["question"] if question else ""
-                print(f"[CLICK] bottom_2 received for question {question_id}: {values}")
-                if is_en:
-                    prompt = (
-                        f"The user clicked their 2 least liked choices: {values} for question {question_id}. "
-                        f"Now follow Steps 6 and 7 (MANDATORY — never skip): "
-                        f"Step 6: Ask curiously why they dislike their FIRST least liked choice ({values[0] if values else ''}). Wait for their answer, then briefly respond naturally. "
-                        f"Step 7: Then ask why they dislike their SECOND least liked choice ({values[1] if len(values) > 1 else ''}). Wait for their answer, then briefly respond. "
-                        f"ONLY AFTER both justifications are given, follow Step C (mandatory confirmation): summarize clearly and conversationally, "
-                        f"for example 'Alright, so to sum up: your favorites are {top_2} and the ones you like least are {values}. Is that right?' "
-                        f"Wait for the user to confirm. ONLY IF they confirm, call save_answer(question_id={question_id}, "
-                        f"question_text='{question_text}', top_2={top_2}, bottom_2={values}), then move naturally to the next question. "
-                        f"If the user wants to change a choice, handle it naturally, update the relevant choices, redo the summary, and wait for confirmation again."
-                    )
-                else:
-                    prompt = (
-                        f"L'utilisateur a cliqué sur ses 2 choix les moins aimés : {values} pour la question {question_id}. "
-                        f"Suivez maintenant les étapes 6 et 7 (OBLIGATOIRES — ne les sautez jamais) : "
-                        f"Étape 6 : Demandez avec curiosité pourquoi il n'aime pas son PREMIER choix le moins aimé ({values[0] if values else ''}). Attendez sa réponse, puis rebondissez brièvement. "
-                        f"Étape 7 : Puis demandez pourquoi il n'aime pas son DEUXIÈME choix le moins aimé ({values[1] if len(values) > 1 else ''}). Attendez sa réponse, puis rebondissez. "
-                        f"SEULEMENT APRÈS avoir obtenu les deux justifications, suivez l'Étape C (confirmation obligatoire) : récapitulez clairement mais de manière conversationnelle, "
-                        f"par exemple 'D'accord, donc si je résume : vos coups de cœur c'est {top_2} et ceux qui vous parlent le moins c'est {values}. C'est bien ça ?' "
-                        f"Attendez que l'utilisateur confirme. UNIQUEMENT s'il confirme, appelez save_answer(question_id={question_id}, "
-                        f"question_text='{question_text}', top_2={top_2}, bottom_2={values}), puis enchaînez naturellement sur la question suivante. "
-                        f"Si l'utilisateur veut modifier un choix, gérez-le naturellement, mettez à jour les choix, refaites le récapitulatif et attendez la confirmation."
-                    )
-                asyncio.ensure_future(session.generate_reply(instructions=prompt))
 
         except Exception as e:
             print(f"[DATA_RECEIVED] Error handling message: {e}")
 
     ctx.room.on("data_received", _on_data_received)
+
+    # Gracefully disable the avatar if Bey disconnects mid-session (e.g. out of credits)
+    # instead of crashing — the session continues in audio-only mode.
+    def _on_participant_disconnected(participant):
+        if participant.identity == "bey-avatar-agent" and use_avatar[0]:
+            use_avatar[0] = False
+            print(f"[AVATAR] Bey avatar disconnected (out of credits?), switching to audio-only mode for room {ctx.room.name}")
+            asyncio.ensure_future(send_state_update({"type": "avatar_disabled"}))
+
+    ctx.room.on("participant_disconnected", _on_participant_disconnected)
 
     # Start with the introduction phase (collect user profile before questionnaire)
     if config.get("language", "fr") == "fr":
@@ -1098,33 +1174,6 @@ N'écrivez et n'affichez JAMAIS la syntaxe d'un appel de fonction dans votre ré
     print(f"[GREETING] Calling generate_reply() at {_time.time():.3f}")
     await session.generate_reply(instructions=greeting)
     print(f"[GREETING] generate_reply() returned at {_time.time():.3f}")
-
-    # Relance l'utilisateur si silence prolongé (micro coupé ou pas de réponse)
-    async def _silence_watchdog():
-        silence_start = [None]
-        SILENCE_TIMEOUT = 15.0  # secondes avant de relancer
-
-        while True:
-            await asyncio.sleep(1.0)
-            state = session.agent_state
-
-            if state == "listening":
-                if silence_start[0] is None:
-                    silence_start[0] = asyncio.get_event_loop().time()
-                elif asyncio.get_event_loop().time() - silence_start[0] > SILENCE_TIMEOUT:
-                    silence_start[0] = None
-                    if is_en:
-                        prompt = "The user hasn't responded for a while. Gently encourage them, for example 'I'm still here, take your time!' then wait again. Keep it short and natural."
-                    else:
-                        prompt = "L'utilisateur n'a pas répondu depuis un moment. Relancez-le gentiment, par exemple 'Je vous écoute toujours, prenez votre temps !' puis attendez à nouveau. Restez bref et naturel."
-                    try:
-                        asyncio.ensure_future(session.generate_reply(instructions=prompt))
-                    except Exception:
-                        break
-            else:
-                silence_start[0] = None
-
-    asyncio.ensure_future(_silence_watchdog())
 
     # Cleanup when the job shuts down (user disconnects or room closes)
     async def _on_shutdown():
@@ -1147,5 +1196,7 @@ if __name__ == "__main__":
             entrypoint_fnc=entrypoint,
             prewarm_fnc=prewarm,
             agent_name="lylo",
+            num_idle_processes=2,
+            load_threshold=0.9,
         )
     )

@@ -1,4 +1,13 @@
 services:
+  livekit:
+    image: livekit/livekit-server
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50200:50000-50200/udp"
+    command: --dev --keys "${LIVEKIT_API_KEY}:${LIVEKIT_API_SECRET}"
+    restart: unless-stopped
+
   backend:
     build: .
     ports:
@@ -14,7 +23,10 @@ services:
       - .env
     environment:
       - BACKEND_URL=http://backend:8000
+      - LIVEKIT_URL=ws://livekit:7880
     depends_on:
       backend:
+        condition: service_started
+      livekit:
         condition: service_started
     restart: unless-stopped

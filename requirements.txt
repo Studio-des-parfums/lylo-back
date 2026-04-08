@@ -13,6 +13,6 @@ livekit-plugins-bey
 openai
 httpx
 openpyxl
-weasyprint
+reportlab
 sqlalchemy[asyncio]
 aiomysql

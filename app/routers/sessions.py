@@ -2,6 +2,7 @@ import unicodedata
 from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.connection import get_db
@@ -17,7 +18,7 @@ from app.models.schemas import (
     StartSessionResponse,
 )
 from app.config import get_settings
-from app.services import formula_service, livekit_service, mail_service, session_store, session_service
+from app.services import formula_service, livekit_service, mail_service, pdf_service, session_store, session_service
 
 router = APIRouter(prefix="/api", tags=["sessions"])
 
@@ -265,6 +266,19 @@ async def replace_note(session_id: str, body: ReplaceNoteRequest, background_tas
     if formula:
         background_tasks.add_task(_send_formula_mail_bg, session_id, formula)
     return result
+
+
+@router.get("/session/{session_id}/formula/pdf")
+async def get_formula_pdf(session_id: str):
+    formula = session_store.get_selected_formula(session_id)
+    if formula is None:
+        raise HTTPException(status_code=404, detail="No formula selected for this session")
+    pdf_bytes = pdf_service.generate_formula_pdf(formula)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="formule-{session_id}.pdf"'},
+    )
 
 
 @router.get("/sessions/all-answers")

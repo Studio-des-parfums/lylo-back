@@ -147,9 +147,9 @@ def generate_mail_html(session_id: str, formula: dict) -> str:
 
 
 def generate_mail_pdf(session_id: str, formula: dict) -> bytes:
-    """Return a PDF binary of the mail (image embedded as base64)."""
-    html = _build_html(formula, inline_images=True)
-    return WeasyHTML(string=html).write_pdf()
+    """Return a PDF binary of the formula."""
+    from app.services.pdf_service import generate_formula_pdf
+    return generate_formula_pdf(formula)
 
 
 # ── Données statiques pour le mail de test ────────────────────────────
@@ -242,22 +242,7 @@ def _build_formula_html(
         + _render_note_section(labels["base"], base)
     )
 
-    img_url = f"{image_base_url.rstrip('/')}/static/images/pyramide.png" if image_base_url else ""
-    img_tag = (
-        f'<img src="{img_url}" alt="Pyramide olfactive" width="200" style="display:block;height:auto;" />'
-        if img_url else ""
-    )
-
-    if img_tag:
-        content_html = f"""
-    <table style="width:100%;border-collapse:collapse;">
-      <tr>
-        <td style="vertical-align:top;padding-right:32px;width:210px;">{img_tag}</td>
-        <td style="vertical-align:top;">{notes_html}</td>
-      </tr>
-    </table>"""
-    else:
-        content_html = notes_html
+    content_html = notes_html
 
     return f"""<!DOCTYPE html>
 <html lang="{language}">
