@@ -15,4 +15,5 @@ httpx
 openpyxl
 reportlab
 sqlalchemy[asyncio]
-aiomysql
+asyncpg
+alembic

@@ -1,4 +1,5 @@
 import unicodedata
+import logging
 from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -11,8 +12,11 @@ from app.models.schemas import (
     BatchGenerateRequest,
     ChangeFormulaTypeRequest,
     GenerateFormulasRequest,
+    MultiGenerateRequest,
+    SaveMultiFormulaRequest,
     ReplaceNoteRequest,
     SaveAnswerRequest,
+    SaveFormulaRequest,
     SaveProfileRequest,
     SelectFormulaRequest,
     SendFormulaMailRequest,
@@ -24,10 +28,21 @@ from app.data.questions import QUESTIONS_EN, QUESTIONS_FR, _enrich_questions
 from app.services import formula_service, livekit_service, mail_service, pdf_service, session_store, session_service
 
 router = APIRouter(prefix="/api", tags=["sessions"])
+logger = logging.getLogger("lylo.sessions_api")
 
 
 @router.post("/session/start", response_model=StartSessionResponse)
 async def start_session(body: StartSessionRequest, db: AsyncSession = Depends(get_db)):
+    logger.info(
+        "[start_session] request language=%s voice_gender=%s question_count=%s mode=%s input_mode=%s avatar=%s email=%s",
+        body.language,
+        body.voice_gender,
+        body.question_count,
+        body.mode,
+        body.input_mode,
+        body.avatar,
+        bool(body.email),
+    )
     if body.email:
         customer = await crud.get_customer_by_email(db, body.email)
         if customer:
@@ -52,9 +67,15 @@ async def start_session(body: StartSessionRequest, db: AsyncSession = Depends(ge
             customer_email=body.email,
             avatar=body.avatar,
         )
+        logger.info(
+            "[start_session] success session_id=%s room=%s",
+            result["session_id"],
+            result["room_name"],
+        )
     except Exception as e:
         if body.email and customer:
             await crud.update_customer(db, customer.id, sessions_available=int(customer.sessions_available) + 1)
+        logger.exception("[start_session] failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Erreur création session: {e}")
     return result
 
@@ -162,7 +183,7 @@ async def save_answer(session_id: str, body: SaveAnswerRequest):
 async def get_answers(session_id: str):
     data = session_store.get_session_answers(session_id)
     if data is None:
-        raise HTTPException(status_code=404, detail="Session not found in Redis")
+        raise HTTPException(status_code=404, detail="Session not found")
     return data
 
 
@@ -242,12 +263,32 @@ def _send_formula_mail_bg(session_id: str, formula: dict) -> None:
 
 @router.post("/session/{session_id}/select-formula")
 async def select_formula(
-    session_id: str, body: SelectFormulaRequest, background_tasks: BackgroundTasks
+    session_id: str, body: SelectFormulaRequest, background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
 ):
     result = formula_service.select_formula(session_id, body.formula_index)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
-    background_tasks.add_task(_send_formula_mail_bg, session_id, result["formula"])
+
+    formula = result["formula"]
+    meta = session_store.get_session_meta(session_id) or {}
+    profile = session_store.get_user_profile(session_id) or {}
+    db_formula = await crud.create_generated_formula(
+        db,
+        session_id=session_id,
+        profile=formula.get("profile"),
+        formula_type=formula.get("formula_type"),
+        top_notes=formula.get("top_notes"),
+        heart_notes=formula.get("heart_notes"),
+        base_notes=formula.get("base_notes"),
+        sizes=formula.get("sizes"),
+        customer_name=profile.get("name"),
+        customer_email=meta.get("customer_email"),
+        language=meta.get("language"),
+    )
+    result["reference"] = db_formula.reference
+
+    background_tasks.add_task(_send_formula_mail_bg, session_id, formula)
     return result
 
 
@@ -268,7 +309,10 @@ async def available_ingredients(session_id: str, note_type: str):
 
 
 @router.post("/session/{session_id}/replace-note")
-async def replace_note(session_id: str, body: ReplaceNoteRequest, background_tasks: BackgroundTasks):
+async def replace_note(
+    session_id: str, body: ReplaceNoteRequest, background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     result = formula_service.replace_note(
         session_id, body.note_type, body.old_note, body.new_note
     )
@@ -276,6 +320,14 @@ async def replace_note(session_id: str, body: ReplaceNoteRequest, background_tas
         raise HTTPException(status_code=400, detail=result["error"])
     formula = session_store.get_selected_formula(session_id)
     if formula:
+        await crud.update_generated_formula_by_session(
+            db,
+            session_id=session_id,
+            top_notes=formula.get("top_notes"),
+            heart_notes=formula.get("heart_notes"),
+            base_notes=formula.get("base_notes"),
+            sizes=formula.get("sizes"),
+        )
         background_tasks.add_task(_send_formula_mail_bg, session_id, formula)
     return result
 
@@ -316,6 +368,59 @@ async def send_formula_mail(body: SendFormulaMailRequest, background_tasks: Back
     return {"status": "ok"}
 
 
+@router.get("/formulas")
+async def list_formulas(
+    search: str = "",
+    page: int = 1,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    skip = (max(page, 1) - 1) * limit
+    rows, total = await crud.get_formulas(db, search=search.strip(), skip=skip, limit=limit)
+    return {
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "results": [
+            {
+                "id": r.id,
+                "reference": r.reference,
+                "session_id": r.session_id,
+                "profile": r.profile,
+                "formula_type": r.formula_type,
+                "top_notes": r.top_notes,
+                "heart_notes": r.heart_notes,
+                "base_notes": r.base_notes,
+                "sizes": r.sizes,
+                "customer_name": r.customer_name,
+                "customer_email": r.customer_email,
+                "language": r.language,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.post("/formulas/save")
+async def save_formula(body: SaveFormulaRequest, db: AsyncSession = Depends(get_db)):
+    formula = body.formula
+    db_formula = await crud.create_generated_formula(
+        db,
+        session_id=formula.get("session_id") or "quiz",
+        profile=formula.get("profile"),
+        formula_type=formula.get("formula_type"),
+        top_notes=formula.get("top_notes"),
+        heart_notes=formula.get("heart_notes"),
+        base_notes=formula.get("base_notes"),
+        sizes=formula.get("sizes"),
+        customer_name=body.customer_name,
+        customer_email=body.customer_email,
+        language=body.language,
+    )
+    return {"reference": db_formula.reference}
+
+
 @router.post("/formulas/generate")
 async def batch_generate_formulas(body: BatchGenerateRequest):
     answers = {
@@ -335,3 +440,59 @@ async def batch_generate_formulas(body: BatchGenerateRequest):
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
+
+
+@router.post("/formulas/generate-multi")
+async def multi_generate_formulas(body: MultiGenerateRequest):
+    """Génère 2 formules pour chaque participant (mode visuel multi-utilisateurs)."""
+    results = []
+    for participant in body.participants:
+        answers = {
+            str(a.question_id): {
+                "question": a.question_text,
+                "top_2": a.top_2,
+                "bottom_2": a.bottom_2,
+            }
+            for a in participant.answers
+        }
+        result = formula_service.generate_formulas_stateless(
+            answers=answers,
+            language=body.language,
+            has_allergies=participant.has_allergies,
+            user_allergens_raw=participant.allergies or "",
+        )
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=f"[{participant.color}] {result['error']}")
+        results.append({
+            "color": participant.color,
+            "formulas": result.get("formulas", []),
+        })
+    return {"participants": results}
+
+
+@router.post("/formulas/save-multi")
+async def save_multi_formulas(body: SaveMultiFormulaRequest, db: AsyncSession = Depends(get_db)):
+    """Sauvegarde la formule sélectionnée par chaque participant, avec référence individuelle."""
+    saved = []
+    for sel in body.selections:
+        formula = sel.formula
+        db_formula = await crud.create_generated_formula(
+            db,
+            session_id=formula.get("session_id") or "quiz-multi",
+            profile=formula.get("profile"),
+            formula_type=formula.get("formula_type"),
+            top_notes=formula.get("top_notes"),
+            heart_notes=formula.get("heart_notes"),
+            base_notes=formula.get("base_notes"),
+            sizes=formula.get("sizes"),
+            customer_name=sel.customer_name,
+            customer_email=sel.customer_email,
+            language=body.language,
+            input_mode=body.input_mode,
+            participant_color=sel.color,
+        )
+        saved.append({
+            "color": sel.color,
+            "reference": db_formula.reference,
+        })
+    return {"saved": saved}

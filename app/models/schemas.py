@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -75,3 +75,43 @@ class SendFormulaMailRequest(BaseModel):
     email: str
     language: Literal["fr", "en"] = "fr"
     formula: dict
+
+
+class SaveFormulaRequest(BaseModel):
+    formula: dict
+    customer_name: str | None = None
+    customer_email: str | None = None
+    language: Literal["fr", "en"] = "fr"
+
+
+class MultiParticipant(BaseModel):
+    color: str
+    gender: str
+    age: str
+    has_allergies: Literal["oui", "non"] = "non"
+    allergies: str | None = None
+    pregnant: bool = False
+    answers: list[BatchAnswerItem]
+
+
+class MultiGenerateRequest(BaseModel):
+    language: Literal["fr", "en"] = "fr"
+    participants: list[MultiParticipant]
+
+
+class MultiFormulaSelection(BaseModel):
+    color: str
+    formula: dict
+    customer_name: str | None = None
+    customer_email: str | None = None
+
+
+class SaveMultiFormulaRequest(BaseModel):
+    language: Literal["fr", "en"] = "fr"
+    input_mode: str = "quiz"
+    selections: list[MultiFormulaSelection]
+
+
+class PrintMultiFormulaRequest(BaseModel):
+    location: str
+    formulas: list[dict]

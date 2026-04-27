@@ -8,7 +8,7 @@ from app.config import get_settings
 settings = get_settings()
 
 DATABASE_URL = (
-    f"mysql+aiomysql://{settings.db_user}:{quote_plus(settings.db_password)}"
+    f"postgresql+asyncpg://{settings.db_user}:{quote_plus(settings.db_password)}"
     f"@{settings.db_host}:{settings.db_port}/{settings.db_name}"
 )
 

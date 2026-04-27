@@ -542,7 +542,7 @@ def _build_formula(
 def generate_formulas(session_id: str, force_type: str | None = None) -> dict:
     """Génère 2 formules personnalisées pour une session.
 
-    1. Récupère les réponses depuis Redis
+    1. Récupère les réponses depuis le session store
     2. Score les notes directement depuis les réponses (note_scoring_mapping.json)
     3. Dérive le profil et le type de formule depuis les notes sélectionnées
     4. Retourne 2 formules avec les notes et les ml selon le type
@@ -658,7 +658,7 @@ def change_selected_formula_type(session_id: str, formula_type: str) -> dict:
 
 
 def select_formula(session_id: str, formula_index: int) -> dict:
-    """Sélectionne une des 2 formules générées et la stocke dans Redis."""
+    """Sélectionne une des 2 formules générées et la stocke dans le session store."""
     formulas = session_store.get_generated_formulas(session_id)
     if not formulas:
         return {"error": "No generated formulas found"}

@@ -6,6 +6,8 @@ from livekit import api
 from app.config import get_settings
 
 logger = logging.getLogger("lylo.livekit")
+LIVEKIT_ROOM_CREATE_TIMEOUT = 10.0
+LIVEKIT_DISPATCH_TIMEOUT = 10.0
 
 
 def create_token(identity: str, room: str) -> str:
@@ -34,15 +36,21 @@ async def create_room_with_agent(room_name: str) -> None:
         settings.livekit_api_secret,
     )
     try:
-        await lkapi.room.create_room(api.CreateRoomRequest(name=room_name))
+        await asyncio.wait_for(
+            lkapi.room.create_room(api.CreateRoomRequest(name=room_name)),
+            timeout=LIVEKIT_ROOM_CREATE_TIMEOUT,
+        )
         logger.info(f"[livekit] Room créée: {room_name}")
 
         last_exc = None
         for attempt in range(1, 4):
             try:
                 await asyncio.sleep(0.5 * attempt)
-                dispatch = await lkapi.agent_dispatch.create_dispatch(
-                    api.CreateAgentDispatchRequest(agent_name="lylo", room=room_name)
+                dispatch = await asyncio.wait_for(
+                    lkapi.agent_dispatch.create_dispatch(
+                        api.CreateAgentDispatchRequest(agent_name="lylo", room=room_name)
+                    ),
+                    timeout=LIVEKIT_DISPATCH_TIMEOUT,
                 )
                 logger.info(f"[livekit] ✅ Dispatch créé (tentative {attempt}): {dispatch}")
                 return
@@ -52,6 +60,9 @@ async def create_room_with_agent(room_name: str) -> None:
 
         logger.error(f"[livekit] ❌ Dispatch échoué après 3 tentatives pour {room_name}")
         raise last_exc
+    except asyncio.TimeoutError as e:
+        logger.error(f"[livekit] Timeout création room/dispatch pour {room_name}: {e}")
+        raise TimeoutError(f"Timeout LiveKit pour la room {room_name}") from e
     except Exception as e:
         logger.error(f"[livekit] Erreur création room/dispatch {room_name}: {e}")
         raise

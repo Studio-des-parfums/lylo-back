@@ -37,12 +37,15 @@ class Settings(BaseSettings):
     smtp_from: str = ""
     internal_email: str = ""
 
-    # Database (MySQL)
+    # Database (PostgreSQL)
     db_host: str
-    db_port: int = 3306
+    db_port: int = 5432
     db_name: str
     db_user: str
     db_password: str
+
+    # PrintNode
+    printnode_api_key: str = ""
 
     @property
     def voice_mapping(self) -> dict[str, dict[str, str]]:
