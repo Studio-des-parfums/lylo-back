@@ -3,7 +3,9 @@ from datetime import date as date_type, datetime
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.models import Customer, GeneratedFormula, Printer, TeamMember
+from sqlalchemy.orm import selectinload
+
+from app.database.models import Customer, GeneratedFormula, Ingredient, Printer, Question, QuestionChoice, TeamMember
 
 
 async def get_customer_by_email(db: AsyncSession, email: str) -> Customer | None:
@@ -212,3 +214,138 @@ async def get_formulas(
         query.order_by(GeneratedFormula.created_at.desc()).offset(skip).limit(limit)
     )
     return rows.scalars().all(), total
+
+
+# --- Question CRUD ---
+
+async def get_all_questions(db: AsyncSession, language: str | None = None, active_only: bool = True) -> list[Question]:
+    query = select(Question).options(selectinload(Question.choices))
+    if active_only:
+        query = query.where(Question.is_active == True)
+    if language:
+        query = query.where(Question.language == language)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+async def get_question_by_id(db: AsyncSession, question_id: int) -> Question | None:
+    result = await db.execute(
+        select(Question).options(selectinload(Question.choices)).where(Question.id == question_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_question(db: AsyncSession, **kwargs) -> Question:
+    question = Question(**kwargs)
+    db.add(question)
+    await db.commit()
+    return await get_question_by_id(db, question.id)
+
+
+async def update_question(db: AsyncSession, question_id: int, **kwargs) -> Question | None:
+    question = await get_question_by_id(db, question_id)
+    if not question:
+        return None
+    for field, value in kwargs.items():
+        setattr(question, field, value)
+    await db.commit()
+    return await get_question_by_id(db, question_id)
+
+
+async def delete_question(db: AsyncSession, question_id: int) -> bool:
+    question = await get_question_by_id(db, question_id)
+    if not question:
+        return False
+    await db.delete(question)
+    await db.commit()
+    return True
+
+
+# --- QuestionChoice CRUD ---
+
+async def create_choice(db: AsyncSession, **kwargs) -> QuestionChoice:
+    choice = QuestionChoice(**kwargs)
+    db.add(choice)
+    await db.commit()
+    await db.refresh(choice)
+    return choice
+
+
+async def get_choice_by_id(db: AsyncSession, choice_id: int) -> QuestionChoice | None:
+    result = await db.execute(select(QuestionChoice).where(QuestionChoice.id == choice_id))
+    return result.scalar_one_or_none()
+
+
+async def update_choice(db: AsyncSession, choice_id: int, **kwargs) -> QuestionChoice | None:
+    choice = await get_choice_by_id(db, choice_id)
+    if not choice:
+        return None
+    for field, value in kwargs.items():
+        setattr(choice, field, value)
+    await db.commit()
+    await db.refresh(choice)
+    return choice
+
+
+async def delete_choice(db: AsyncSession, choice_id: int) -> bool:
+    choice = await get_choice_by_id(db, choice_id)
+    if not choice:
+        return False
+    await db.delete(choice)
+    await db.commit()
+    return True
+
+
+# --- Ingredient CRUD ---
+
+async def get_all_ingredients(
+    db: AsyncSession,
+    language: str | None = None,
+    type: str | None = None,
+    category: str | None = None,
+    active_only: bool = True,
+) -> list[Ingredient]:
+    query = select(Ingredient)
+    if active_only:
+        query = query.where(Ingredient.is_active == True)
+    if language:
+        query = query.where(Ingredient.language == language)
+    if type:
+        query = query.where(Ingredient.type == type)
+    if category:
+        query = query.where(Ingredient.category == category)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+async def get_ingredient_by_id(db: AsyncSession, ingredient_id: int) -> Ingredient | None:
+    result = await db.execute(select(Ingredient).where(Ingredient.id == ingredient_id))
+    return result.scalar_one_or_none()
+
+
+async def create_ingredient(db: AsyncSession, **kwargs) -> Ingredient:
+    ingredient = Ingredient(**kwargs)
+    db.add(ingredient)
+    await db.commit()
+    await db.refresh(ingredient)
+    return ingredient
+
+
+async def update_ingredient(db: AsyncSession, ingredient_id: int, **kwargs) -> Ingredient | None:
+    ingredient = await get_ingredient_by_id(db, ingredient_id)
+    if not ingredient:
+        return None
+    for field, value in kwargs.items():
+        setattr(ingredient, field, value)
+    await db.commit()
+    await db.refresh(ingredient)
+    return ingredient
+
+
+async def delete_ingredient(db: AsyncSession, ingredient_id: int) -> bool:
+    ingredient = await get_ingredient_by_id(db, ingredient_id)
+    if not ingredient:
+        return False
+    await db.delete(ingredient)
+    await db.commit()
+    return True

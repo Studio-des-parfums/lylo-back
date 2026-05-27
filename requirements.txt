@@ -16,4 +16,4 @@ openpyxl
 reportlab
 sqlalchemy[asyncio]
 asyncpg
-alembic
+alembicpython-multipart==0.0.29

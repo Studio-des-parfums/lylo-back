@@ -1,4 +1,5 @@
-from sqlalchemy import Boolean, Column, Date, DateTime, Integer, String, JSON
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, JSON, Text
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database.connection import Base
 
@@ -37,6 +38,43 @@ class Printer(Base):
     protocol = Column(String(20), default="printnode")  # printnode | cups | raw
     cups_name = Column(String(100), nullable=True)
     printnode_id = Column(Integer, nullable=True)
+    is_active = Column(Boolean, default=True)
+
+
+class Question(Base):
+    __tablename__ = "questions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    text = Column(Text, nullable=False)
+    language = Column(String(10), nullable=False)  # fr, en
+    is_active = Column(Boolean, default=True)
+
+    choices = relationship("QuestionChoice", back_populates="question", cascade="all, delete-orphan")
+
+
+class QuestionChoice(Base):
+    __tablename__ = "question_choices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False, index=True)
+    text = Column(String(255), nullable=False)
+    image_url = Column(String(500), nullable=True)
+    language = Column(String(10), nullable=False)  # fr, en
+
+    question = relationship("Question", back_populates="choices")
+
+
+class Ingredient(Base):
+    __tablename__ = "ingredients"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    type = Column(String(20), nullable=False)       # top, heart, base
+    category = Column(String(100), nullable=True)   # adult, enfant, etc.
+    language = Column(String(10), nullable=False)   # fr, en
+    description = Column(Text, nullable=True)
+    intensity = Column(String(20), nullable=True)   # legere, moyenne, forte
+    allergens = Column(JSON, nullable=True)         # null = LLM raisonne seul
     is_active = Column(Boolean, default=True)
 
 

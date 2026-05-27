@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app.database.connection import engine
-from app.routers import mail, sessions, customers, teams, lookup, ping, printers
+from app.routers import mail, sessions, customers, teams, lookup, ping, printers, catalog
 
 _STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 _DB_KEEPALIVE_INTERVAL = 3600  # 1 heure
@@ -49,6 +49,7 @@ def create_app() -> FastAPI:
     app.include_router(lookup.router)
     app.include_router(ping.router)
     app.include_router(printers.router)
+    app.include_router(catalog.router)
     app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
     return app
