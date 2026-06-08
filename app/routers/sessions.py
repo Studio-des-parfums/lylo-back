@@ -24,7 +24,6 @@ from app.models.schemas import (
     StartSessionResponse,
 )
 from app.config import get_settings
-from app.data.questions import QUESTIONS_EN, QUESTIONS_FR, _enrich_questions
 from app.services import formula_service, livekit_service, mail_service, pdf_service, session_store, session_service
 
 router = APIRouter(prefix="/api", tags=["sessions"])
@@ -230,7 +229,7 @@ async def generate_formulas(session_id: str, body: GenerateFormulasRequest = Gen
             status_code=400,
             detail="Profile incomplete, cannot generate formulas",
         )
-    result = formula_service.generate_formulas(session_id, force_type=body.formula_type)
+    result = await formula_service.generate_formulas(session_id, force_type=body.formula_type)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
@@ -294,7 +293,7 @@ async def select_formula(
 
 @router.post("/session/{session_id}/change-formula-type")
 async def change_formula_type(session_id: str, body: ChangeFormulaTypeRequest):
-    result = formula_service.change_selected_formula_type(session_id, body.formula_type)
+    result = await formula_service.change_selected_formula_type(session_id, body.formula_type)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
@@ -302,7 +301,7 @@ async def change_formula_type(session_id: str, body: ChangeFormulaTypeRequest):
 
 @router.get("/session/{session_id}/available-ingredients/{note_type}")
 async def available_ingredients(session_id: str, note_type: str):
-    result = formula_service.get_available_ingredients(session_id, note_type)
+    result = await formula_service.get_available_ingredients(session_id, note_type)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
@@ -313,7 +312,7 @@ async def replace_note(
     session_id: str, body: ReplaceNoteRequest, background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
-    result = formula_service.replace_note(
+    result = await formula_service.replace_note(
         session_id, body.note_type, body.old_note, body.new_note
     )
     if "error" in result:
@@ -351,11 +350,23 @@ async def get_all_answers():
 
 
 @router.get("/questions")
-async def get_questions(count: int = 12, language: str = "fr"):
-    if not 1 <= count <= 12:
-        raise HTTPException(status_code=400, detail="count doit être entre 1 et 12")
-    questions = QUESTIONS_FR if language == "fr" else QUESTIONS_EN
-    return {"questions": _enrich_questions(questions[:count])}
+async def get_questions(count: int = 12, language: str = "fr", db: AsyncSession = Depends(get_db)):
+    questions = await crud.get_all_questions(db, language=language, active_only=True)
+    if not questions:
+        raise HTTPException(status_code=404, detail="Aucune question disponible pour cette langue")
+    import random
+    random.shuffle(questions)
+    selected = questions[:count]
+    return {
+        "questions": [
+            {
+                "id": q.id,
+                "question": q.text,
+                "choices": [{"label": c.text, "image": c.image_url or ""} for c in q.choices],
+            }
+            for q in selected
+        ]
+    }
 
 
 @router.post("/formulas/send-mail")
@@ -431,7 +442,7 @@ async def batch_generate_formulas(body: BatchGenerateRequest):
         }
         for a in body.answers
     }
-    result = formula_service.generate_formulas_stateless(
+    result = await formula_service.generate_formulas_stateless(
         answers=answers,
         language=body.language,
         has_allergies=body.has_allergies,
@@ -455,7 +466,7 @@ async def multi_generate_formulas(body: MultiGenerateRequest):
             }
             for a in participant.answers
         }
-        result = formula_service.generate_formulas_stateless(
+        result = await formula_service.generate_formulas_stateless(
             answers=answers,
             language=body.language,
             has_allergies=participant.has_allergies,

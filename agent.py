@@ -198,7 +198,7 @@ Available choices: {choices_str}
 STEP: Ask {first_name} for their 2 FAVORITE choices in ONE natural sentence. Do NOT enumerate the choices aloud — the user can see them on screen.{click_hint}
 
 Once the user gives 2 choices:
-1. Match each choice to the canonical label (accept singular/plural, accents, 'the ...', lowercase: 'campagnes' → 'Campagne', 'forêts' → 'Forêt'). Do NOT ask for clarification for minor variations — just normalize silently.
+1. Match each spoken answer to the closest canonical label from: [{choices_str}]. Use semantic and phonetic understanding — the user may mispronounce, abbreviate, or give a partial answer (e.g. "delhi" → "Delhi", "jazz" → "Jazz et new age", "rock" → "Rock"). NEVER ask for clarification for ambiguous answers — pick the closest match and move on silently.
 2. Call notify_top_2(question_id={q['id']}, top_2=[choice1, choice2]) IMMEDIATELY.
 3. Your mission for this step is complete."""
         else:
@@ -210,7 +210,7 @@ Choix disponibles : {choices_str}
 ÉTAPE : Demandez à {first_name} ses 2 choix PRÉFÉRÉS en UNE seule phrase naturelle. Ne lisez JAMAIS les choix à voix haute — l'utilisateur les voit à l'écran.{click_hint}
 
 Une fois que l'utilisateur donne 2 choix :
-1. Faites correspondre silencieusement chaque mot au label canonique le plus proche ('campagnes' → 'Campagne', 'montagnes' → 'Montagne', 'forêts' → 'Forêt', etc.). INTERDIT ABSOLU : ne jamais signaler, corriger, mentionner ou commenter la forme donnée par l'utilisateur. Agissez directement.
+1. Faites correspondre chaque réponse vocale au label canonique le plus proche parmi : [{choices_str}]. Utilisez votre compréhension sémantique et phonétique — l'utilisateur peut mal prononcer, abréger ou donner une réponse partielle (ex: "délit" → "Delhi", "jazz" → "Jazz et new age", "gastro" → "Gastronomique"). INTERDIT ABSOLU : ne jamais signaler, corriger ou commenter — choisissez le label le plus proche et continuez directement.
 2. Appelez IMMÉDIATEMENT notify_top_2(question_id={q['id']}, top_2=[choix1, choix2]).
 3. Votre mission est terminée."""
 
@@ -249,7 +249,7 @@ Une fois que l'utilisateur donne 2 choix :
 IMPORTANT: Never accept one of {top_2} as a least liked choice. If the user picks one, point it out with humor and ask again.
 
 Once the user gives 2 least liked choices:
-1. Match each to the canonical label (accept singular/plural, accents, lowercase — normalize silently without asking for confirmation).
+1. Match each spoken answer to the closest canonical label from: [{choices_str}]. Use semantic and phonetic understanding — normalize silently without asking for confirmation.
 2. Call notify_bottom_2(question_id={q['id']}, bottom_2=[choice1, choice2]) IMMEDIATELY.
 3. Your mission is complete."""
         else:
@@ -258,7 +258,7 @@ Once the user gives 2 least liked choices:
 IMPORTANT : N'acceptez JAMAIS un choix de {top_2} comme moins aimé. Si l'utilisateur en choisit un, signalez-le avec humour et redemandez.
 
 Une fois que l'utilisateur donne 2 choix :
-1. Faites correspondre silencieusement chaque mot au label canonique le plus proche. INTERDIT ABSOLU : ne jamais signaler, corriger, mentionner ou commenter la forme donnée. Agissez directement.
+1. Faites correspondre chaque réponse vocale au label canonique le plus proche parmi : [{choices_str}]. Utilisez votre compréhension sémantique et phonétique — normalisez silencieusement sans demander confirmation. INTERDIT ABSOLU : ne jamais signaler, corriger ou commenter.
 2. Appelez IMMÉDIATEMENT notify_bottom_2(question_id={q['id']}, bottom_2=[choix1, choix2]).
 3. Votre mission est terminée."""
 
