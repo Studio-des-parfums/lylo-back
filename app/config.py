@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     # SMTP (email sending — OVH MX Plan)
     smtp_host: str = "ssl0.ovh.net"
     smtp_port: int = 587
+    smtp_use_ssl: bool = False
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from: str = ""

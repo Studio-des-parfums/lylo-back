@@ -14,9 +14,20 @@ _SMTP_TIMEOUT_SECONDS = 15
 logger = logging.getLogger("lylo.mail")
 
 
-def _open_smtp_connection(host: str, port: int) -> smtplib.SMTP:
+def _open_smtp_connection() -> smtplib.SMTP:
     """Open an SMTP connection with a finite timeout to avoid hanging requests."""
-    return smtplib.SMTP(host, port, timeout=_SMTP_TIMEOUT_SECONDS)
+    settings = get_settings()
+    if settings.smtp_use_ssl:
+        return smtplib.SMTP_SSL(
+            settings.smtp_host,
+            settings.smtp_port,
+            timeout=_SMTP_TIMEOUT_SECONDS,
+        )
+    return smtplib.SMTP(
+        settings.smtp_host,
+        settings.smtp_port,
+        timeout=_SMTP_TIMEOUT_SECONDS,
+    )
 
 
 def _smtp_context(to_email: str) -> dict:
@@ -24,6 +35,7 @@ def _smtp_context(to_email: str) -> dict:
     return {
         "smtp_host": settings.smtp_host,
         "smtp_port": settings.smtp_port,
+        "smtp_use_ssl": settings.smtp_use_ssl,
         "smtp_user_configured": bool(settings.smtp_user),
         "smtp_from_configured": bool(settings.smtp_from),
         "timeout_seconds": _SMTP_TIMEOUT_SECONDS,
@@ -37,8 +49,9 @@ def _send_via_smtp(to_email: str, msg: MIMEText) -> None:
     context = _smtp_context(to_email)
     logger.info("[mail] SMTP send start %s", context)
     try:
-        with _open_smtp_connection(settings.smtp_host, settings.smtp_port) as server:
-            server.starttls()
+        with _open_smtp_connection() as server:
+            if not settings.smtp_use_ssl:
+                server.starttls()
             server.login(settings.smtp_user, settings.smtp_password)
             server.sendmail(msg["From"], to_email, msg.as_string())
     except Exception:
