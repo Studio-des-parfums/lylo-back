@@ -5,7 +5,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlalchemy.orm import selectinload
 
-from app.database.models import Customer, GeneratedFormula, Ingredient, Printer, Question, QuestionChoice, TeamMember
+from app.database.models import (
+    Customer,
+    GeneratedFormula,
+    Ingredient,
+    Printer,
+    Question,
+    QuestionChoice,
+    QuestionGroup,
+    TeamMember,
+)
+
+
+MAX_QUESTIONS_PER_GROUP = 12
 
 
 async def get_customer_by_email(db: AsyncSession, email: str) -> Customer | None:
@@ -219,7 +231,7 @@ async def get_formulas(
 # --- Question CRUD ---
 
 async def get_all_questions(db: AsyncSession, language: str | None = None, active_only: bool = True) -> list[Question]:
-    query = select(Question).options(selectinload(Question.choices))
+    query = select(Question).options(selectinload(Question.choices), selectinload(Question.groups))
     if active_only:
         query = query.where(Question.is_active == True)
     if language:
@@ -230,13 +242,44 @@ async def get_all_questions(db: AsyncSession, language: str | None = None, activ
 
 async def get_question_by_id(db: AsyncSession, question_id: int) -> Question | None:
     result = await db.execute(
-        select(Question).options(selectinload(Question.choices)).where(Question.id == question_id)
+        select(Question).options(selectinload(Question.choices), selectinload(Question.groups)).where(Question.id == question_id)
     )
     return result.scalar_one_or_none()
 
 
+async def _get_groups_by_ids(db: AsyncSession, group_ids: list[int]) -> list[QuestionGroup]:
+    if not group_ids:
+        return []
+    result = await db.execute(
+        select(QuestionGroup)
+        .options(selectinload(QuestionGroup.questions))
+        .where(QuestionGroup.id.in_(group_ids))
+    )
+    groups = result.scalars().all()
+    if len(groups) != len(set(group_ids)):
+        raise ValueError("Un ou plusieurs groupes de questions sont introuvables")
+    return groups
+
+
+def _validate_group_capacity(groups: list[QuestionGroup], *, current_question_id: int | None = None) -> None:
+    for group in groups:
+        count = sum(1 for question in group.questions if question.id != current_question_id)
+        if count >= MAX_QUESTIONS_PER_GROUP:
+            raise ValueError(
+                f'Le groupe "{group.name}" a déjà atteint la limite de {MAX_QUESTIONS_PER_GROUP} questions'
+            )
+
+
+def _sync_question_groups(question: Question, groups: list[QuestionGroup]) -> None:
+    question.groups = groups
+
+
 async def create_question(db: AsyncSession, **kwargs) -> Question:
+    group_ids = kwargs.pop("group_ids", [])
+    groups = await _get_groups_by_ids(db, group_ids)
+    _validate_group_capacity(groups)
     question = Question(**kwargs)
+    _sync_question_groups(question, groups)
     db.add(question)
     await db.commit()
     return await get_question_by_id(db, question.id)
@@ -246,6 +289,11 @@ async def update_question(db: AsyncSession, question_id: int, **kwargs) -> Quest
     question = await get_question_by_id(db, question_id)
     if not question:
         return None
+    if "group_ids" in kwargs:
+        group_ids = kwargs.pop("group_ids") or []
+        groups = await _get_groups_by_ids(db, group_ids)
+        _validate_group_capacity(groups, current_question_id=question_id)
+        _sync_question_groups(question, groups)
     for field, value in kwargs.items():
         setattr(question, field, value)
     await db.commit()
@@ -259,6 +307,75 @@ async def delete_question(db: AsyncSession, question_id: int) -> bool:
     await db.delete(question)
     await db.commit()
     return True
+
+
+async def get_all_question_groups(db: AsyncSession, active_only: bool = False) -> list[QuestionGroup]:
+    query = select(QuestionGroup).options(selectinload(QuestionGroup.questions))
+    if active_only:
+        query = query.where(QuestionGroup.is_active == True)
+    result = await db.execute(query.order_by(QuestionGroup.name.asc()))
+    return result.scalars().all()
+
+
+async def get_question_group_by_id(db: AsyncSession, group_id: int) -> QuestionGroup | None:
+    result = await db.execute(
+        select(QuestionGroup).options(selectinload(QuestionGroup.questions)).where(QuestionGroup.id == group_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_question_group(db: AsyncSession, **kwargs) -> QuestionGroup:
+    group = QuestionGroup(**kwargs)
+    db.add(group)
+    await db.commit()
+    await db.refresh(group)
+    return await get_question_group_by_id(db, group.id)
+
+
+async def update_question_group(db: AsyncSession, group_id: int, **kwargs) -> QuestionGroup | None:
+    group = await get_question_group_by_id(db, group_id)
+    if not group:
+        return None
+    for field, value in kwargs.items():
+        setattr(group, field, value)
+    await db.commit()
+    return await get_question_group_by_id(db, group_id)
+
+
+async def delete_question_group(db: AsyncSession, group_id: int) -> bool:
+    group = await get_question_group_by_id(db, group_id)
+    if not group:
+        return False
+    await db.delete(group)
+    await db.commit()
+    return True
+
+
+async def get_active_question_groups_with_questions(db: AsyncSession, language: str) -> list[QuestionGroup]:
+    result = await db.execute(
+        select(QuestionGroup)
+        .join(QuestionGroup.questions)
+        .options(
+            selectinload(QuestionGroup.questions).selectinload(Question.choices),
+            selectinload(QuestionGroup.questions).selectinload(Question.groups),
+        )
+        .where(
+            QuestionGroup.is_active == True,
+            Question.is_active == True,
+            Question.language == language,
+        )
+        .distinct()
+    )
+    groups = result.scalars().all()
+    filtered_groups = []
+    for group in groups:
+        group.questions = [
+            question for question in group.questions
+            if question.is_active and question.language == language
+        ]
+        if group.questions:
+            filtered_groups.append(group)
+    return filtered_groups
 
 
 # --- QuestionChoice CRUD ---

@@ -12,10 +12,15 @@ logger = logging.getLogger("lylo.session")
 
 
 async def _load_questions_from_db(language: str, count: int) -> list[dict]:
-    """Charge les questions depuis la BDD dans un ordre aléatoire."""
+    """Charge les questions d'un groupe actif choisi aléatoirement."""
     async with AsyncSessionLocal() as db:
-        questions = await crud.get_all_questions(db, language=language, active_only=True)
+        groups = await crud.get_active_question_groups_with_questions(db, language=language)
 
+    if not groups:
+        raise ValueError(f"Aucun groupe de questions actif disponible pour la langue '{language}'")
+
+    selected_group = random.choice(groups)
+    questions = list(selected_group.questions)
     random.shuffle(questions)
     selected = questions[:count]
 

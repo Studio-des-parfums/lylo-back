@@ -8,6 +8,7 @@ Architecture :
 """
 
 import json
+from decimal import Decimal, ROUND_DOWN
 
 from openai import AsyncOpenAI
 
@@ -21,25 +22,25 @@ _FORMULA_TYPE_CONFIGS: dict[str, dict] = {
     "frais": {
         "note_counts": {"top": 3, "heart": 3, "base": 2},
         "sizes": {
-            10: {"top_ml": 1, "heart_ml": 1, "base_ml": 2, "booster_ml": 1},
-            30: {"top_ml": 3, "heart_ml": 3, "base_ml": 6, "booster_ml": 3},
-            50: {"top_ml": 5, "heart_ml": 5, "base_ml": 10, "booster_ml": 5},
+            10: {"top_ml": 2, "heart_ml": 2, "base_ml": 4, "booster_ml": 2},
+            30: {"top_ml": 6, "heart_ml": 6, "base_ml": 12, "booster_ml": 6},
+            50: {"top_ml": 10, "heart_ml": 10, "base_ml": 20, "booster_ml": 10},
         },
     },
     "mix": {
         "note_counts": {"top": 2, "heart": 3, "base": 2},
         "sizes": {
-            10: {"top_ml": 1, "heart_ml": 1, "base_ml": 2, "booster_ml": 1},
-            30: {"top_ml": 3, "heart_ml": 3, "base_ml": 6, "booster_ml": 3},
-            50: {"top_ml": 5, "heart_ml": 5, "base_ml": 10, "booster_ml": 5},
+            10: {"top_ml": 2, "heart_ml": 2, "base_ml": 4, "booster_ml": 2},
+            30: {"top_ml": 6, "heart_ml": 6, "base_ml": 12, "booster_ml": 6},
+            50: {"top_ml": 10, "heart_ml": 10, "base_ml": 20, "booster_ml": 10},
         },
     },
     "puissant": {
         "note_counts": {"top": 2, "heart": 2, "base": 3},
         "sizes": {
-            10: {"top_ml": 1, "heart_ml": 1, "base_ml": 2, "booster_ml": 1},
-            30: {"top_ml": 2, "heart_ml": 4, "base_ml": 6, "booster_ml": 3},
-            50: {"top_ml": 4, "heart_ml": 6, "base_ml": 10, "booster_ml": 5},
+            10: {"top_ml": 2, "heart_ml": 2, "base_ml": 4, "booster_ml": 2},
+            30: {"top_ml": 4, "heart_ml": 8, "base_ml": 12, "booster_ml": 6},
+            50: {"top_ml": 8, "heart_ml": 12, "base_ml": 20, "booster_ml": 10},
         },
     },
 }
@@ -206,6 +207,77 @@ def _select_booster(note_names: list[str], descriptions: list[str]) -> dict:
     return scored[0][0]
 
 
+def _distribute_ml(total_ml: float | int, count: int) -> list[float]:
+    if count <= 0:
+        return []
+
+    total = Decimal(str(total_ml))
+    cents = (total * 100).quantize(Decimal("1"))
+    base = (cents / count).quantize(Decimal("1"), rounding=ROUND_DOWN)
+    remainder = int(cents - (base * count))
+
+    values = []
+    for index in range(count):
+        extra = Decimal("1") if index < remainder else Decimal("0")
+        values.append(float((base + extra) / 100))
+    return values
+
+
+def _build_note_entries(note_names: list[str], total_ml: float | int) -> list[dict]:
+    distributed_ml = _distribute_ml(total_ml, len(note_names))
+    return [
+        {"name": name, "ml": ml}
+        for name, ml in zip(note_names, distributed_ml, strict=False)
+    ]
+
+
+def _normalize_note_list(
+    requested_notes: list[str],
+    available_names: list[str],
+    target_count: int,
+) -> list[str]:
+    available_lookup = {name.lower(): name for name in available_names}
+    selected: list[str] = []
+    seen: set[str] = set()
+
+    for raw_name in requested_notes:
+        normalized = available_lookup.get(str(raw_name).strip().lower())
+        if not normalized or normalized in seen:
+            continue
+        selected.append(normalized)
+        seen.add(normalized)
+        if len(selected) == target_count:
+            return selected
+
+    for name in available_names:
+        if name in seen:
+            continue
+        selected.append(name)
+        seen.add(name)
+        if len(selected) == target_count:
+            break
+
+    return selected
+
+
+def _normalize_formula_notes(
+    llm_result: dict,
+    ingredients: list[dict],
+    formula_type: str,
+) -> tuple[list[str], list[str], list[str]]:
+    counts = _FORMULA_TYPE_CONFIGS[formula_type]["note_counts"]
+    available_by_type = {
+        "top": [ing["name"] for ing in ingredients if ing["type"] == "top"],
+        "heart": [ing["name"] for ing in ingredients if ing["type"] == "heart"],
+        "base": [ing["name"] for ing in ingredients if ing["type"] == "base"],
+    }
+
+    top_notes = _normalize_note_list(llm_result.get("top_notes", []), available_by_type["top"], counts["top"])
+    heart_notes = _normalize_note_list(llm_result.get("heart_notes", []), available_by_type["heart"], counts["heart"])
+    base_notes = _normalize_note_list(llm_result.get("base_notes", []), available_by_type["base"], counts["base"])
+    return top_notes, heart_notes, base_notes
+
+
 def _compute_sizes(
     top_notes: list[str],
     heart_notes: list[str],
@@ -219,9 +291,9 @@ def _compute_sizes(
         sizes[f"{target_ml}ml"] = {
             "target_ml": target_ml,
             "formula_type": formula_type,
-            "top_notes": [{"name": n, "ml": ml_config["top_ml"]} for n in top_notes],
-            "heart_notes": [{"name": n, "ml": ml_config["heart_ml"]} for n in heart_notes],
-            "base_notes": [{"name": n, "ml": ml_config["base_ml"]} for n in base_notes],
+            "top_notes": _build_note_entries(top_notes, ml_config["top_ml"]),
+            "heart_notes": _build_note_entries(heart_notes, ml_config["heart_ml"]),
+            "base_notes": _build_note_entries(base_notes, ml_config["base_ml"]),
             "boosters": [{"name": booster["name"], "ml": ml_config["booster_ml"]}],
         }
     return sizes
@@ -248,9 +320,7 @@ async def _build_formula(
     if formula_type not in _FORMULA_TYPE_CONFIGS:
         formula_type = "mix"
 
-    top_notes = llm_result.get("top_notes", [])
-    heart_notes = llm_result.get("heart_notes", [])
-    base_notes = llm_result.get("base_notes", [])
+    top_notes, heart_notes, base_notes = _normalize_formula_notes(llm_result, ingredients, formula_type)
 
     all_names = top_notes + heart_notes + base_notes
     ing_by_name = {i["name"]: i for i in ingredients}

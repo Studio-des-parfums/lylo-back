@@ -76,28 +76,30 @@ Pour chaque taille cible (10ml, 30ml, 50ml), les ml sont répartis entre les cat
 === "Frais"
     | Catégorie | 10ml | 30ml | 50ml |
     |---|---|---|---|
-    | Top notes | 1ml | 3ml | 5ml |
-    | Heart notes | 1ml | 3ml | 5ml |
-    | Base notes | 2ml | 6ml | 10ml |
-    | Booster | 1ml | 3ml | 5ml |
+    | Top notes | 2ml | 6ml | 10ml |
+    | Heart notes | 2ml | 6ml | 10ml |
+    | Base notes | 4ml | 12ml | 20ml |
+    | Booster | 2ml | 6ml | 10ml |
 
 === "Mix"
     | Catégorie | 10ml | 30ml | 50ml |
     |---|---|---|---|
-    | Top notes | 1ml | 3ml | 5ml |
-    | Heart notes | 1ml | 3ml | 5ml |
-    | Base notes | 2ml | 6ml | 10ml |
-    | Booster | 1ml | 3ml | 5ml |
+    | Top notes | 2ml | 6ml | 10ml |
+    | Heart notes | 2ml | 6ml | 10ml |
+    | Base notes | 4ml | 12ml | 20ml |
+    | Booster | 2ml | 6ml | 10ml |
 
 === "Puissant"
     | Catégorie | 10ml | 30ml | 50ml |
     |---|---|---|---|
-    | Top notes | 1ml | 3ml | 5ml |
-    | Heart notes | 1ml | 3ml | 5ml |
-    | Base notes | 2ml | 6ml | 10ml |
-    | Booster | 1ml | 3ml | 5ml |
+    | Top notes | 2ml | 4ml | 8ml |
+    | Heart notes | 2ml | 8ml | 12ml |
+    | Base notes | 4ml | 12ml | 20ml |
+    | Booster | 2ml | 6ml | 10ml |
 
-Les ml sont divisés équitablement entre les notes d'une même catégorie.
+Les ml sont divisés équitablement entre les notes d'une même catégorie, avec ajustement sur la dernière note si nécessaire pour que le total fasse exactement `10ml`, `30ml` ou `50ml`.
+
+Chaque formule contient toujours des **notes de tête**, **de cœur** et **de fond** selon le quota attendu pour son type. Si la réponse du LLM est incomplète, le backend complète automatiquement avec des ingrédients disponibles de la bonne catégorie.
 
 ---
 

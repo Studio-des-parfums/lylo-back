@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, JSON, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, JSON, Table, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database.connection import Base
@@ -41,6 +41,15 @@ class Printer(Base):
     is_active = Column(Boolean, default=True)
 
 
+question_group_links = Table(
+    "question_group_links",
+    Base.metadata,
+    Column("question_id", Integer, ForeignKey("questions.id", ondelete="CASCADE"), primary_key=True),
+    Column("group_id", Integer, ForeignKey("question_groups.id", ondelete="CASCADE"), primary_key=True),
+    UniqueConstraint("question_id", "group_id", name="uq_question_group_links_question_group"),
+)
+
+
 class Question(Base):
     __tablename__ = "questions"
 
@@ -50,6 +59,17 @@ class Question(Base):
     is_active = Column(Boolean, default=True)
 
     choices = relationship("QuestionChoice", back_populates="question", cascade="all, delete-orphan")
+    groups = relationship("QuestionGroup", secondary=question_group_links, back_populates="questions")
+
+
+class QuestionGroup(Base):
+    __tablename__ = "question_groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, unique=True)
+    is_active = Column(Boolean, default=True)
+
+    questions = relationship("Question", secondary=question_group_links, back_populates="groups")
 
 
 class QuestionChoice(Base):

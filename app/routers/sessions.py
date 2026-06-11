@@ -1,3 +1,4 @@
+import random
 import unicodedata
 import logging
 from datetime import date
@@ -351,13 +352,16 @@ async def get_all_answers():
 
 @router.get("/questions")
 async def get_questions(count: int = 12, language: str = "fr", db: AsyncSession = Depends(get_db)):
-    questions = await crud.get_all_questions(db, language=language, active_only=True)
-    if not questions:
-        raise HTTPException(status_code=404, detail="Aucune question disponible pour cette langue")
-    import random
+    groups = await crud.get_active_question_groups_with_questions(db, language=language)
+    if not groups:
+        raise HTTPException(status_code=404, detail="Aucun groupe de questions actif disponible")
+    selected_group = random.choice(groups)
+    questions = list(selected_group.questions)
     random.shuffle(questions)
     selected = questions[:count]
     return {
+        "group_id": selected_group.id,
+        "group_name": selected_group.name,
         "questions": [
             {
                 "id": q.id,
