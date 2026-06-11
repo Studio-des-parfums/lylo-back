@@ -77,6 +77,10 @@ class SendFormulaMailRequest(BaseModel):
     formula: dict
 
 
+class SendFormulaByReferenceRequest(BaseModel):
+    email: str | None = None
+
+
 class SaveFormulaRequest(BaseModel):
     formula: dict
     customer_name: str | None = None

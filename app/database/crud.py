@@ -207,6 +207,26 @@ async def get_generated_formula_by_session(db: AsyncSession, session_id: str) ->
     return result.scalar_one_or_none()
 
 
+async def get_generated_formula_by_reference(db: AsyncSession, reference: str) -> GeneratedFormula | None:
+    result = await db.execute(
+        select(GeneratedFormula).where(GeneratedFormula.reference == reference)
+    )
+    return result.scalar_one_or_none()
+
+
+async def update_generated_formula_by_reference(
+    db: AsyncSession, reference: str, **kwargs
+) -> GeneratedFormula | None:
+    formula = await get_generated_formula_by_reference(db, reference)
+    if not formula:
+        return None
+    for field, value in kwargs.items():
+        setattr(formula, field, value)
+    await db.commit()
+    await db.refresh(formula)
+    return formula
+
+
 async def get_formulas(
     db: AsyncSession, search: str = "", skip: int = 0, limit: int = 50
 ) -> tuple[list[GeneratedFormula], int]:

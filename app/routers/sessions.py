@@ -20,6 +20,7 @@ from app.models.schemas import (
     SaveFormulaRequest,
     SaveProfileRequest,
     SelectFormulaRequest,
+    SendFormulaByReferenceRequest,
     SendFormulaMailRequest,
     StartSessionRequest,
     StartSessionResponse,
@@ -381,6 +382,65 @@ async def send_formula_mail(body: SendFormulaMailRequest, background_tasks: Back
         print(f"[mail] Erreur envoi: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     return {"status": "ok"}
+
+
+@router.post("/formulas/{reference}/send-mail")
+async def send_formula_mail_by_reference(
+    reference: str,
+    body: SendFormulaByReferenceRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    db_formula = await crud.get_generated_formula_by_reference(db, reference)
+    if not db_formula:
+        raise HTTPException(status_code=404, detail="Formula not found")
+
+    target_email = (body.email or db_formula.customer_email or "").strip()
+    if not target_email:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing email: provide one or store a customer_email on the formula",
+        )
+
+    if body.email and body.email.strip() != (db_formula.customer_email or "").strip():
+        db_formula = await crud.update_generated_formula_by_reference(
+            db,
+            reference,
+            customer_email=target_email,
+        )
+        if not db_formula:
+            raise HTTPException(status_code=404, detail="Formula not found")
+
+    formula = {
+        "reference": db_formula.reference,
+        "session_id": db_formula.session_id,
+        "profile": db_formula.profile,
+        "formula_type": db_formula.formula_type,
+        "top_notes": db_formula.top_notes,
+        "heart_notes": db_formula.heart_notes,
+        "base_notes": db_formula.base_notes,
+        "sizes": db_formula.sizes,
+        "customer_name": db_formula.customer_name,
+        "customer_email": db_formula.customer_email,
+        "language": db_formula.language,
+        "created_at": db_formula.created_at.isoformat() if db_formula.created_at else None,
+    }
+
+    try:
+        mail_service.send_formula_mail_stateless(
+            target_email,
+            formula,
+            db_formula.language or "fr",
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {exc}")
+
+    return {
+        "status": "ok",
+        "reference": db_formula.reference,
+        "email": target_email,
+    }
 
 
 @router.get("/formulas")
