@@ -1,5 +1,7 @@
 import base64
+import logging
 import smtplib
+import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -9,11 +11,42 @@ from app.services import session_store
 
 _IMAGES_DIR = Path(__file__).resolve().parent.parent / "static" / "images"
 _SMTP_TIMEOUT_SECONDS = 15
+logger = logging.getLogger("lylo.mail")
 
 
 def _open_smtp_connection(host: str, port: int) -> smtplib.SMTP:
     """Open an SMTP connection with a finite timeout to avoid hanging requests."""
     return smtplib.SMTP(host, port, timeout=_SMTP_TIMEOUT_SECONDS)
+
+
+def _smtp_context(to_email: str) -> dict:
+    settings = get_settings()
+    return {
+        "smtp_host": settings.smtp_host,
+        "smtp_port": settings.smtp_port,
+        "smtp_user_configured": bool(settings.smtp_user),
+        "smtp_from_configured": bool(settings.smtp_from),
+        "timeout_seconds": _SMTP_TIMEOUT_SECONDS,
+        "to_email": to_email,
+    }
+
+
+def _send_via_smtp(to_email: str, msg: MIMEText) -> None:
+    settings = get_settings()
+    start = time.perf_counter()
+    context = _smtp_context(to_email)
+    logger.info("[mail] SMTP send start %s", context)
+    try:
+        with _open_smtp_connection(settings.smtp_host, settings.smtp_port) as server:
+            server.starttls()
+            server.login(settings.smtp_user, settings.smtp_password)
+            server.sendmail(msg["From"], to_email, msg.as_string())
+    except Exception:
+        duration_ms = round((time.perf_counter() - start) * 1000)
+        logger.exception("[mail] SMTP send failed after %sms %s", duration_ms, context)
+        raise
+    duration_ms = round((time.perf_counter() - start) * 1000)
+    logger.info("[mail] SMTP send success after %sms %s", duration_ms, context)
 
 
 def _image_data_uri(filename: str) -> str:
@@ -289,10 +322,7 @@ def send_test_mail(to_email: str) -> None:
     msg["From"] = settings.smtp_from or settings.smtp_user
     msg["To"] = to_email
 
-    with _open_smtp_connection(settings.smtp_host, settings.smtp_port) as server:
-        server.starttls()
-        server.login(settings.smtp_user, settings.smtp_password)
-        server.sendmail(msg["From"], to_email, msg.as_string())
+    _send_via_smtp(to_email, msg)
 
 
 def _build_internal_html(formula: dict) -> str:
@@ -382,10 +412,7 @@ def send_internal_formula_mail(to_email: str, session_id: str, formula: dict) ->
     msg["From"] = settings.smtp_from or settings.smtp_user
     msg["To"] = to_email
 
-    with _open_smtp_connection(settings.smtp_host, settings.smtp_port) as server:
-        server.starttls()
-        server.login(settings.smtp_user, settings.smtp_password)
-        server.sendmail(msg["From"], to_email, msg.as_string())
+    _send_via_smtp(to_email, msg)
 
 
 def send_mail(to_email: str, session_id: str, formula: dict) -> None:
@@ -412,10 +439,7 @@ def send_mail(to_email: str, session_id: str, formula: dict) -> None:
     msg["From"] = settings.smtp_from or settings.smtp_user
     msg["To"] = to_email
 
-    with _open_smtp_connection(settings.smtp_host, settings.smtp_port) as server:
-        server.starttls()
-        server.login(settings.smtp_user, settings.smtp_password)
-        server.sendmail(msg["From"], to_email, msg.as_string())
+    _send_via_smtp(to_email, msg)
 
 
 def send_formula_mail_stateless(to_email: str, formula: dict, language: str = "fr") -> None:
@@ -439,10 +463,7 @@ def send_formula_mail_stateless(to_email: str, formula: dict, language: str = "f
     msg["From"] = settings.smtp_from or settings.smtp_user
     msg["To"] = to_email
 
-    with _open_smtp_connection(settings.smtp_host, settings.smtp_port) as server:
-        server.starttls()
-        server.login(settings.smtp_user, settings.smtp_password)
-        server.sendmail(msg["From"], to_email, msg.as_string())
+    _send_via_smtp(to_email, msg)
 
     internal_email = settings.internal_email
     if not internal_email:
@@ -454,7 +475,4 @@ def send_formula_mail_stateless(to_email: str, formula: dict, language: str = "f
         msg_int["Subject"] = f"[Lylo Interne] {profile} — Fiche complète"
         msg_int["From"] = settings.smtp_from or settings.smtp_user
         msg_int["To"] = email
-        with _open_smtp_connection(settings.smtp_host, settings.smtp_port) as srv:
-            srv.starttls()
-            srv.login(settings.smtp_user, settings.smtp_password)
-            srv.sendmail(msg_int["From"], email, msg_int.as_string())
+        _send_via_smtp(email, msg_int)

@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
@@ -10,6 +12,7 @@ class TestMailRequest(BaseModel):
     to: str
 
 router = APIRouter(prefix="/api", tags=["mail"])
+logger = logging.getLogger("lylo.mail_api")
 
 
 def _get_formula_or_404(session_id: str) -> dict:
@@ -44,12 +47,16 @@ async def download_mail(session_id: str):
 @router.post("/mail/test")
 async def test_mail(body: TestMailRequest):
     """Test SMTP connection and send a simple test email."""
+    logger.info("[mail/test] request to=%s", body.to)
     try:
         mail_service.send_test_mail(body.to)
     except RuntimeError as exc:
+        logger.warning("[mail/test] SMTP unavailable: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
+        logger.exception("[mail/test] SMTP test failed to=%s", body.to)
         raise HTTPException(status_code=500, detail=f"SMTP error: {exc}")
+    logger.info("[mail/test] success to=%s", body.to)
     return {"status": "ok", "to": body.to}
 
 
@@ -57,10 +64,14 @@ async def test_mail(body: TestMailRequest):
 async def send_mail(session_id: str, body: SendMailRequest):
     """Send the mail HTML directly in the body of an email."""
     formula = _get_formula_or_404(session_id)
+    logger.info("[mail/send] request session_id=%s to=%s", session_id, body.to)
     try:
         mail_service.send_mail(body.to, session_id, formula)
     except RuntimeError as exc:
+        logger.warning("[mail/send] SMTP unavailable session_id=%s to=%s: %s", session_id, body.to, exc)
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
+        logger.exception("[mail/send] failed session_id=%s to=%s", session_id, body.to)
         raise HTTPException(status_code=500, detail=f"Failed to send email: {exc}")
+    logger.info("[mail/send] success session_id=%s to=%s", session_id, body.to)
     return {"status": "ok", "to": body.to}
