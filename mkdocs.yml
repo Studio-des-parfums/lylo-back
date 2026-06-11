@@ -60,7 +60,7 @@ nav:
   - Architecture:
     - Vue d'ensemble: architecture/overview.md
     - Services: architecture/services.md
-    - Redis & Sessions: architecture/redis.md
+    - Session Store & Sessions: architecture/redis.md
     - Agent vocal: architecture/agent.md
   - API Reference:
     - Sessions: api/sessions.md

@@ -46,13 +46,13 @@ Retourne les métadonnées d'une session (langue, voix, questions, room).
 
 ## DELETE `/session/{session_id}`
 
-Supprime la session Redis et la room LiveKit associée.
+Supprime la session en mémoire et la room LiveKit associée.
 
 ---
 
 ## GET `/session_list`
 
-Liste tous les `session_id` actifs dans Redis.
+Liste tous les `session_id` actifs en mémoire.
 
 ---
 

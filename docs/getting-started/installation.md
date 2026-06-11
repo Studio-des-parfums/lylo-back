@@ -3,7 +3,6 @@
 ## Prérequis
 
 - Python **3.13+**
-- Docker Desktop (pour Redis)
 - Un fichier `.env` à la racine (voir [Variables d'environnement](env-vars.md))
 
 ## Cloner le projet
@@ -29,6 +28,5 @@ pip install -r requirements.txt
 | `livekit-plugins-deepgram` | Speech-to-Text |
 | `livekit-plugins-cartesia` | Text-to-Speech |
 | `livekit-plugins-bey` | Avatar vidéo |
-| `redis` | Client Redis |
 | `openpyxl` | Lecture du coffret (XLSX) |
 | `weasyprint` | Génération PDF |

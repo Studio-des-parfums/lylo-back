@@ -10,13 +10,12 @@ Lylo est un agent vocal IA qui guide l'utilisateur à travers un questionnaire o
 
 ---
 
-## 3 services qui tournent ensemble
+## 2 services qui tournent ensemble
 
 | Service | Technologie | Rôle |
 |---|---|---|
 | **Backend API** | FastAPI + Python | Gère les sessions, les réponses, la génération de formules |
 | **Agent vocal** | LiveKit Agents + OpenAI | Conduit la conversation et le questionnaire en voix |
-| **Redis** | Redis 7 | Stocke l'état des sessions (TTL 1h) |
 
 ---
 
@@ -25,7 +24,7 @@ Lylo est un agent vocal IA qui guide l'utilisateur à travers un questionnaire o
 ```
 Frontend → POST /session/start
               ↓
-         Backend crée la session Redis + token LiveKit
+         Backend crée la session + token LiveKit
               ↓
          Agent vocal rejoint la room LiveKit
               ↓

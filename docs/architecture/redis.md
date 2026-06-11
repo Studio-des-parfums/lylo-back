@@ -1,22 +1,22 @@
-# Redis & Sessions
+# Session Store & Sessions
 
 ## Structure des données
 
-Chaque session est identifiée par un `session_id` (UUID). Les données sont réparties sur plusieurs clés Redis :
+Chaque session est identifiée par un `session_id` (UUID). Les données sont réparties dans plusieurs structures en mémoire du process :
 
 ```
-session:{session_id}:meta
-session:{session_id}:profile
-session:{session_id}:answers
-session:{session_id}:generated_formulas
-session:{session_id}:selected_formula
+_meta[session_id]
+_profiles[session_id]
+_answers[session_id]
+_generated_formulas[session_id]
+_selected_formula[session_id]
 ```
 
-Toutes les clés ont un TTL de **1 heure**, remis à zéro à chaque écriture.
+Il n'y a pas de persistance externe ni de TTL. Les données sont perdues si le process redémarre.
 
 ---
 
-## Contenu de chaque clé
+## Contenu de chaque structure
 
 ### `:meta`
 ```json
@@ -78,7 +78,7 @@ La formule sélectionnée par l'utilisateur, enrichie des personnalisations (éc
 
 ## États de session
 
-L'état courant de la session est calculé dynamiquement à partir des données Redis, via `GET /session/{id}/state`.
+L'état courant de la session est calculé dynamiquement à partir des données du `session_store`, via `GET /session/{id}/state`.
 
 | État | Condition |
 |---|---|

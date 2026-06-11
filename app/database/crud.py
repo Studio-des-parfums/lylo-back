@@ -261,6 +261,11 @@ async def _get_groups_by_ids(db: AsyncSession, group_ids: list[int]) -> list[Que
     return groups
 
 
+def _validate_question_has_groups(groups: list[QuestionGroup]) -> None:
+    if not groups:
+        raise ValueError("Une question doit appartenir à au moins un groupe")
+
+
 def _validate_group_capacity(groups: list[QuestionGroup], *, current_question_id: int | None = None) -> None:
     for group in groups:
         count = sum(1 for question in group.questions if question.id != current_question_id)
@@ -277,6 +282,7 @@ def _sync_question_groups(question: Question, groups: list[QuestionGroup]) -> No
 async def create_question(db: AsyncSession, **kwargs) -> Question:
     group_ids = kwargs.pop("group_ids", [])
     groups = await _get_groups_by_ids(db, group_ids)
+    _validate_question_has_groups(groups)
     _validate_group_capacity(groups)
     question = Question(**kwargs)
     _sync_question_groups(question, groups)
@@ -292,6 +298,7 @@ async def update_question(db: AsyncSession, question_id: int, **kwargs) -> Quest
     if "group_ids" in kwargs:
         group_ids = kwargs.pop("group_ids") or []
         groups = await _get_groups_by_ids(db, group_ids)
+        _validate_question_has_groups(groups)
         _validate_group_capacity(groups, current_question_id=question_id)
         _sync_question_groups(question, groups)
     for field, value in kwargs.items():
@@ -310,7 +317,7 @@ async def delete_question(db: AsyncSession, question_id: int) -> bool:
 
 
 async def get_all_question_groups(db: AsyncSession, active_only: bool = False) -> list[QuestionGroup]:
-    query = select(QuestionGroup).options(selectinload(QuestionGroup.questions))
+    query = select(QuestionGroup).options(selectinload(QuestionGroup.questions).selectinload(Question.groups))
     if active_only:
         query = query.where(QuestionGroup.is_active == True)
     result = await db.execute(query.order_by(QuestionGroup.name.asc()))
@@ -319,7 +326,9 @@ async def get_all_question_groups(db: AsyncSession, active_only: bool = False) -
 
 async def get_question_group_by_id(db: AsyncSession, group_id: int) -> QuestionGroup | None:
     result = await db.execute(
-        select(QuestionGroup).options(selectinload(QuestionGroup.questions)).where(QuestionGroup.id == group_id)
+        select(QuestionGroup).options(
+            selectinload(QuestionGroup.questions).selectinload(Question.groups)
+        ).where(QuestionGroup.id == group_id)
     )
     return result.scalar_one_or_none()
 
@@ -346,6 +355,12 @@ async def delete_question_group(db: AsyncSession, group_id: int) -> bool:
     group = await get_question_group_by_id(db, group_id)
     if not group:
         return False
+    orphan_questions = [
+        question for question in group.questions
+        if len(question.groups) == 1 and question.groups[0].id == group_id
+    ]
+    for question in orphan_questions:
+        await db.delete(question)
     await db.delete(group)
     await db.commit()
     return True

@@ -8,25 +8,25 @@ Gère la création d'une nouvelle session et la récupération de ses données.
 - Générer un `session_id` unique
 - Créer la room LiveKit
 - Générer le token LiveKit pour le frontend
-- Stocker les métadonnées initiales dans Redis (`language`, `voice_gender`, `question_count`, `mode`, `questions`)
+- Stocker les métadonnées initiales dans le `session_store` (`language`, `voice_gender`, `mode`, `questions`)
 
 ---
 
-## redis_service.py
+## session_store.py
 
-Couche d'accès à Redis. Toutes les opérations de lecture/écriture des sessions passent par ici.
+Couche de stockage en mémoire des sessions. Toutes les opérations de lecture/écriture des sessions passent par ici.
 
-**Clés Redis par session :**
+**Structures stockées par session :**
 
-| Clé | Contenu |
+| Structure | Contenu |
 |---|---|
-| `session:{id}:meta` | Langue, voix, questions, room LiveKit |
-| `session:{id}:profile` | Prénom, genre, âge, allergies |
-| `session:{id}:answers` | Réponses aux questions (par `question_id`) |
-| `session:{id}:generated_formulas` | Les 2 formules générées |
-| `session:{id}:selected_formula` | La formule choisie + personnalisations |
+| `_meta[session_id]` | Langue, voix, questions, room LiveKit |
+| `_profiles[session_id]` | Prénom, genre, âge, allergies |
+| `_answers[session_id]` | Réponses aux questions (par `question_id`) |
+| `_generated_formulas[session_id]` | Les 2 formules générées |
+| `_selected_formula[session_id]` | La formule choisie + personnalisations |
 
-**TTL :** 1 heure (3600s) — toutes les clés sont remises à jour à chaque écriture.
+Les données sont conservées en mémoire du process et sont perdues si le service redémarre.
 
 ---
 

@@ -21,7 +21,7 @@ lylo-back/
     ├── services/
     │   ├── session_service.py     # Création et récupération de session
     │   ├── formula_service.py     # Génération de formules (~750 lignes)
-    │   ├── redis_service.py       # Persistance des sessions Redis
+    │   ├── session_store.py       # Stockage en mémoire des sessions
     │   ├── mail_service.py        # Génération HTML/PDF et envoi email
     │   └── livekit_service.py     # Tokens et rooms LiveKit
     └── data/
@@ -37,7 +37,7 @@ lylo-back/
 |---|---|---|
 | `agent.py` | ~830 | Toute la logique de l'agent vocal : conversation, outils LLM, gestion d'état |
 | `app/services/formula_service.py` | ~750 | Pipeline complet de génération de formules |
-| `app/services/redis_service.py` | ~205 | CRUD des sessions dans Redis |
+| `app/services/session_store.py` | ~150 | Stockage en mémoire des sessions |
 | `app/routers/sessions.py` | ~177 | Définition des endpoints API sessions |
 | `app/data/questions.py` | ~177 | Données du questionnaire (12 questions, 2 langues) |
 
@@ -50,6 +50,6 @@ OpenAI GPT-4     → LLM pour la conversation
 Deepgram         → Speech-to-Text
 Cartesia         → Text-to-Speech
 Bey              → Avatar vidéo
-Redis            → Stockage des sessions
+Session store    → Stockage en mémoire des sessions
 WeasyPrint       → Génération PDF
 ```

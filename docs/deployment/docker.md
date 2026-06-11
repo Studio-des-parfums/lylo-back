@@ -2,12 +2,11 @@
 
 ## Services
 
-`docker-compose.yml` lance les 3 services en une seule commande :
+`docker-compose.yml` lance les services applicatifs en une seule commande :
 
 | Service | Image | Port | Dépend de |
 |---|---|---|---|
-| `redis` | `redis:7-alpine` | 6379 | — |
-| `backend` | Build local | 8000 | redis |
+| `backend` | Build local | 8000 | — |
 | `agent` | Build local | — | backend |
 
 ## Lancer en production
@@ -31,7 +30,6 @@ docker compose down
 Les services utilisent le fichier `.env` à la racine. En production, les URLs internes sont automatiquement configurées :
 
 - L'agent utilise `BACKEND_URL=http://backend:8000`
-- L'agent utilise `REDIS_URL=redis://redis:6379`
 
 ## Build de l'image seule
 
