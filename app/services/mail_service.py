@@ -8,6 +8,12 @@ from app.config import get_settings
 from app.services import session_store
 
 _IMAGES_DIR = Path(__file__).resolve().parent.parent / "static" / "images"
+_SMTP_TIMEOUT_SECONDS = 15
+
+
+def _open_smtp_connection(host: str, port: int) -> smtplib.SMTP:
+    """Open an SMTP connection with a finite timeout to avoid hanging requests."""
+    return smtplib.SMTP(host, port, timeout=_SMTP_TIMEOUT_SECONDS)
 
 
 def _image_data_uri(filename: str) -> str:
@@ -283,7 +289,7 @@ def send_test_mail(to_email: str) -> None:
     msg["From"] = settings.smtp_from or settings.smtp_user
     msg["To"] = to_email
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+    with _open_smtp_connection(settings.smtp_host, settings.smtp_port) as server:
         server.starttls()
         server.login(settings.smtp_user, settings.smtp_password)
         server.sendmail(msg["From"], to_email, msg.as_string())
@@ -376,7 +382,7 @@ def send_internal_formula_mail(to_email: str, session_id: str, formula: dict) ->
     msg["From"] = settings.smtp_from or settings.smtp_user
     msg["To"] = to_email
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+    with _open_smtp_connection(settings.smtp_host, settings.smtp_port) as server:
         server.starttls()
         server.login(settings.smtp_user, settings.smtp_password)
         server.sendmail(msg["From"], to_email, msg.as_string())
@@ -406,7 +412,7 @@ def send_mail(to_email: str, session_id: str, formula: dict) -> None:
     msg["From"] = settings.smtp_from or settings.smtp_user
     msg["To"] = to_email
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+    with _open_smtp_connection(settings.smtp_host, settings.smtp_port) as server:
         server.starttls()
         server.login(settings.smtp_user, settings.smtp_password)
         server.sendmail(msg["From"], to_email, msg.as_string())
@@ -433,7 +439,7 @@ def send_formula_mail_stateless(to_email: str, formula: dict, language: str = "f
     msg["From"] = settings.smtp_from or settings.smtp_user
     msg["To"] = to_email
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+    with _open_smtp_connection(settings.smtp_host, settings.smtp_port) as server:
         server.starttls()
         server.login(settings.smtp_user, settings.smtp_password)
         server.sendmail(msg["From"], to_email, msg.as_string())
@@ -448,7 +454,7 @@ def send_formula_mail_stateless(to_email: str, formula: dict, language: str = "f
         msg_int["Subject"] = f"[Lylo Interne] {profile} — Fiche complète"
         msg_int["From"] = settings.smtp_from or settings.smtp_user
         msg_int["To"] = email
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as srv:
+        with _open_smtp_connection(settings.smtp_host, settings.smtp_port) as srv:
             srv.starttls()
             srv.login(settings.smtp_user, settings.smtp_password)
             srv.sendmail(msg_int["From"], email, msg_int.as_string())
