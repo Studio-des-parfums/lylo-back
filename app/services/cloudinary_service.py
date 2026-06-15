@@ -1,3 +1,5 @@
+from io import BytesIO
+
 import cloudinary
 import cloudinary.uploader
 
@@ -14,13 +16,19 @@ def _configure():
     )
 
 
-def upload_choice_image(choice_id: int, file_bytes: bytes) -> str:
+def upload_choice_image(choice_id: int, file_bytes: bytes, filename: str | None = None) -> str:
     """Upload une image de choix sur Cloudinary et retourne l'URL sécurisée."""
+    settings = get_settings()
+    if not settings.cloudinary_cloud_name or not settings.cloudinary_api_key or not settings.cloudinary_api_secret:
+        raise RuntimeError("Configuration Cloudinary manquante")
+
     _configure()
     public_id = f"lylo/choices/{choice_id}"
+    file_obj = BytesIO(file_bytes)
+    file_obj.name = filename or f"choice_{choice_id}.bin"
     try:
         result = cloudinary.uploader.upload(
-            file_bytes,
+            file_obj,
             public_id=public_id,
             overwrite=True,
             resource_type="image",
@@ -28,7 +36,7 @@ def upload_choice_image(choice_id: int, file_bytes: bytes) -> str:
             quality="auto",
         )
     except Exception as exc:
-        raise RuntimeError("Échec de l'upload Cloudinary") from exc
+        raise RuntimeError(f"Échec de l'upload Cloudinary: {exc}") from exc
     return result["secure_url"]
 
 

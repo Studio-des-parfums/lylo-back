@@ -265,7 +265,7 @@ async def upload_choice_image(
         raise HTTPException(status_code=400, detail="Le fichier est vide")
 
     try:
-        image_url = cloudinary_service.upload_choice_image(choice_id, file_bytes)
+        image_url = cloudinary_service.upload_choice_image(choice_id, file_bytes, file.filename)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
