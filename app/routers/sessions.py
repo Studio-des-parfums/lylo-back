@@ -357,8 +357,7 @@ async def get_questions(count: int = 12, language: str = "fr", db: AsyncSession 
     if not groups:
         raise HTTPException(status_code=404, detail="Aucun groupe de questions actif disponible")
     selected_group = random.choice(groups)
-    questions = list(selected_group.questions)
-    random.shuffle(questions)
+    questions = session_service.order_questions_for_front(selected_group.name, selected_group.questions)
     selected = questions[:count]
     return {
         "group_id": selected_group.id,

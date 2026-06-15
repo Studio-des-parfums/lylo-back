@@ -9,6 +9,22 @@ from app.services.livekit_service import create_token, create_room_with_agent
 from app.services import session_store
 
 logger = logging.getLogger("lylo.session")
+_QUESTIONNAIRE_1_PRIORITY = [12, 18, 13, 11]
+
+
+def order_questions_for_front(group_name: str, questions: list):
+    """Prioritize image-backed questions for Questionnaire 1, keep others shuffled."""
+    items = list(questions)
+    random.shuffle(items)
+
+    if group_name != "Questionnaire 1":
+        return items
+
+    priority_index = {question_id: index for index, question_id in enumerate(_QUESTIONNAIRE_1_PRIORITY)}
+    prioritized = [q for q in items if q.id in priority_index]
+    remaining = [q for q in items if q.id not in priority_index]
+    prioritized.sort(key=lambda q: priority_index[q.id])
+    return prioritized + remaining
 
 
 async def _load_questions_from_db(language: str, count: int) -> list[dict]:
@@ -20,8 +36,7 @@ async def _load_questions_from_db(language: str, count: int) -> list[dict]:
         raise ValueError(f"Aucun groupe de questions actif disponible pour la langue '{language}'")
 
     selected_group = random.choice(groups)
-    questions = list(selected_group.questions)
-    random.shuffle(questions)
+    questions = order_questions_for_front(selected_group.name, selected_group.questions)
     selected = questions[:count]
 
     result = []
