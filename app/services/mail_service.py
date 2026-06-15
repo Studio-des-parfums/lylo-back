@@ -1,65 +1,54 @@
 import base64
 import logging
-import smtplib
 import time
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from pathlib import Path
+
+import resend
 
 from app.config import get_settings
 from app.services import session_store
 
 _IMAGES_DIR = Path(__file__).resolve().parent.parent / "static" / "images"
-_SMTP_TIMEOUT_SECONDS = 15
+_MAIL_TIMEOUT_SECONDS = 15
 logger = logging.getLogger("lylo.mail")
 
 
-def _open_smtp_connection() -> smtplib.SMTP:
-    """Open an SMTP connection with a finite timeout to avoid hanging requests."""
-    settings = get_settings()
-    if settings.smtp_use_ssl:
-        return smtplib.SMTP_SSL(
-            settings.smtp_host,
-            settings.smtp_port,
-            timeout=_SMTP_TIMEOUT_SECONDS,
-        )
-    return smtplib.SMTP(
-        settings.smtp_host,
-        settings.smtp_port,
-        timeout=_SMTP_TIMEOUT_SECONDS,
-    )
-
-
-def _smtp_context(to_email: str) -> dict:
+def _mail_context(to_email: str, subject: str) -> dict:
     settings = get_settings()
     return {
-        "smtp_host": settings.smtp_host,
-        "smtp_port": settings.smtp_port,
-        "smtp_use_ssl": settings.smtp_use_ssl,
-        "smtp_user_configured": bool(settings.smtp_user),
-        "smtp_from_configured": bool(settings.smtp_from),
-        "timeout_seconds": _SMTP_TIMEOUT_SECONDS,
+        "provider": "resend",
+        "resend_api_key_configured": bool(settings.resend_api_key),
+        "from_email": settings.resend_from,
+        "timeout_seconds": _MAIL_TIMEOUT_SECONDS,
         "to_email": to_email,
+        "subject": subject,
     }
 
 
-def _send_via_smtp(to_email: str, msg: MIMEText) -> None:
+def _send_mail(to_email: str, subject: str, html: str) -> None:
     settings = get_settings()
+    if not settings.resend_api_key:
+        raise RuntimeError("RESEND_API_KEY is not configured")
+
     start = time.perf_counter()
-    context = _smtp_context(to_email)
-    logger.info("[mail] SMTP send start %s", context)
+    context = _mail_context(to_email, subject)
+    logger.info("[mail] Resend send start %s", context)
     try:
-        with _open_smtp_connection() as server:
-            if not settings.smtp_use_ssl:
-                server.starttls()
-            server.login(settings.smtp_user, settings.smtp_password)
-            server.sendmail(msg["From"], to_email, msg.as_string())
+        resend.api_key = settings.resend_api_key
+        resend.Emails.send(
+            {
+                "from": settings.resend_from,
+                "to": [to_email],
+                "subject": subject,
+                "html": html,
+            }
+        )
     except Exception:
         duration_ms = round((time.perf_counter() - start) * 1000)
-        logger.exception("[mail] SMTP send failed after %sms %s", duration_ms, context)
+        logger.exception("[mail] Resend send failed after %sms %s", duration_ms, context)
         raise
     duration_ms = round((time.perf_counter() - start) * 1000)
-    logger.info("[mail] SMTP send success after %sms %s", duration_ms, context)
+    logger.info("[mail] Resend send success after %sms %s", duration_ms, context)
 
 
 def _image_data_uri(filename: str) -> str:
@@ -319,8 +308,8 @@ def _build_formula_html(
 def send_test_mail(to_email: str) -> None:
     """Send a simple test email to verify SMTP connectivity."""
     settings = get_settings()
-    if not settings.smtp_user or not settings.smtp_password:
-        raise RuntimeError("SMTP is not configured")
+    if not settings.resend_api_key:
+        raise RuntimeError("RESEND_API_KEY is not configured")
 
     notes_30ml = _MOCK_FORMULA_TEST["sizes"]["30ml"]
     html = _build_formula_html(
@@ -330,12 +319,7 @@ def send_test_mail(to_email: str) -> None:
         language="fr",
     )
 
-    msg = MIMEText(html, "html", "utf-8")
-    msg["Subject"] = "[Lylo] Test — Votre formule de parfum"
-    msg["From"] = settings.smtp_from or settings.smtp_user
-    msg["To"] = to_email
-
-    _send_via_smtp(to_email, msg)
+    _send_mail(to_email, "[Lylo] Test — Votre formule de parfum", html)
 
 
 def _build_internal_html(formula: dict) -> str:
@@ -409,8 +393,8 @@ def _build_internal_html(formula: dict) -> str:
 def send_internal_formula_mail(to_email: str, session_id: str, formula: dict) -> None:
     """Send a complete internal recap email with all notes and all sizes."""
     settings = get_settings()
-    if not settings.smtp_host or not settings.smtp_user:
-        raise RuntimeError("SMTP is not configured")
+    if not settings.resend_api_key:
+        raise RuntimeError("RESEND_API_KEY is not configured")
 
     html = _build_internal_html(formula)
 
@@ -419,20 +403,14 @@ def send_internal_formula_mail(to_email: str, session_id: str, formula: dict) ->
     profile = formula.get("profile", "formule")
 
     subject = f"[Lylo Interne] {profile} — Fiche complète"
-
-    msg = MIMEText(html, "html", "utf-8")
-    msg["Subject"] = subject
-    msg["From"] = settings.smtp_from or settings.smtp_user
-    msg["To"] = to_email
-
-    _send_via_smtp(to_email, msg)
+    _send_mail(to_email, subject, html)
 
 
 def send_mail(to_email: str, session_id: str, formula: dict) -> None:
     """Send the formula email to the user."""
     settings = get_settings()
-    if not settings.smtp_host or not settings.smtp_user:
-        raise RuntimeError("SMTP is not configured")
+    if not settings.resend_api_key:
+        raise RuntimeError("RESEND_API_KEY is not configured")
 
     session_meta = session_store.get_session_meta(session_id)
     language = session_meta.get("language", "fr") if session_meta else "fr"
@@ -447,19 +425,14 @@ def send_mail(to_email: str, session_id: str, formula: dict) -> None:
         image_base_url=settings.backend_url,
     )
 
-    msg = MIMEText(html, "html", "utf-8")
-    msg["Subject"] = labels["subject"]
-    msg["From"] = settings.smtp_from or settings.smtp_user
-    msg["To"] = to_email
-
-    _send_via_smtp(to_email, msg)
+    _send_mail(to_email, labels["subject"], html)
 
 
 def send_formula_mail_stateless(to_email: str, formula: dict, language: str = "fr") -> None:
     """Envoie le mail de formule sans session — pour le mode batch."""
     settings = get_settings()
-    if not settings.smtp_host or not settings.smtp_user:
-        raise RuntimeError("SMTP is not configured")
+    if not settings.resend_api_key:
+        raise RuntimeError("RESEND_API_KEY is not configured")
 
     labels = _LABELS.get(language, _LABELS["fr"])
     notes_30ml = formula.get("sizes", {}).get("30ml", {})
@@ -471,12 +444,7 @@ def send_formula_mail_stateless(to_email: str, formula: dict, language: str = "f
         image_base_url=settings.backend_url,
     )
 
-    msg = MIMEText(html, "html", "utf-8")
-    msg["Subject"] = labels["subject"]
-    msg["From"] = settings.smtp_from or settings.smtp_user
-    msg["To"] = to_email
-
-    _send_via_smtp(to_email, msg)
+    _send_mail(to_email, labels["subject"], html)
 
     internal_email = settings.internal_email
     if not internal_email:
@@ -484,8 +452,4 @@ def send_formula_mail_stateless(to_email: str, formula: dict, language: str = "f
     for email in [e.strip() for e in internal_email.split(",") if e.strip()]:
         html_internal = _build_internal_html(formula)
         profile = formula.get("profile", "formule")
-        msg_int = MIMEText(html_internal, "html", "utf-8")
-        msg_int["Subject"] = f"[Lylo Interne] {profile} — Fiche complète"
-        msg_int["From"] = settings.smtp_from or settings.smtp_user
-        msg_int["To"] = email
-        _send_via_smtp(email, msg_int)
+        _send_mail(email, f"[Lylo Interne] {profile} — Fiche complète", html_internal)

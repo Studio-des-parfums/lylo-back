@@ -19,3 +19,4 @@ asyncpg
 alembic
 python-multipart==0.0.29
 cloudinary
+resend

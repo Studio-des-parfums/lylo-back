@@ -29,7 +29,11 @@ class Settings(BaseSettings):
     # Backend
     backend_url: str = "http://localhost:8000"
 
-    # SMTP (email sending — OVH MX Plan)
+    # Email
+    resend_api_key: str = ""
+    resend_from: str = "onboarding@resend.dev"
+
+    # SMTP (legacy fallback)
     smtp_host: str = "ssl0.ovh.net"
     smtp_port: int = 587
     smtp_use_ssl: bool = False
