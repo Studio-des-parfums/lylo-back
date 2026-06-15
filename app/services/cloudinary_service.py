@@ -14,18 +14,21 @@ def _configure():
     )
 
 
-def upload_choice_image(file_bytes: bytes, filename: str) -> str:
+def upload_choice_image(choice_id: int, file_bytes: bytes) -> str:
     """Upload une image de choix sur Cloudinary et retourne l'URL sécurisée."""
     _configure()
-    public_id = f"lylo/choices/{filename.rsplit('.', 1)[0]}"
-    result = cloudinary.uploader.upload(
-        file_bytes,
-        public_id=public_id,
-        overwrite=True,
-        resource_type="image",
-        fetch_format="auto",
-        quality="auto",
-    )
+    public_id = f"lylo/choices/{choice_id}"
+    try:
+        result = cloudinary.uploader.upload(
+            file_bytes,
+            public_id=public_id,
+            overwrite=True,
+            resource_type="image",
+            fetch_format="auto",
+            quality="auto",
+        )
+    except Exception as exc:
+        raise RuntimeError("Échec de l'upload Cloudinary") from exc
     return result["secure_url"]
 
 

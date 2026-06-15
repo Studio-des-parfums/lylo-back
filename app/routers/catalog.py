@@ -261,7 +261,13 @@ async def upload_choice_image(
         raise HTTPException(status_code=400, detail="Le fichier doit être une image")
 
     file_bytes = await file.read()
-    image_url = cloudinary_service.upload_choice_image(file_bytes, file.filename or f"choice_{choice_id}")
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Le fichier est vide")
+
+    try:
+        image_url = cloudinary_service.upload_choice_image(choice_id, file_bytes)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     updated = await crud.update_choice(db, choice_id, image_url=image_url)
     return updated
