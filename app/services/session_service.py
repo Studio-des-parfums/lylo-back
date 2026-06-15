@@ -9,18 +9,22 @@ from app.services.livekit_service import create_token, create_room_with_agent
 from app.services import session_store
 
 logger = logging.getLogger("lylo.session")
-_QUESTIONNAIRE_1_PRIORITY = [12, 18, 13, 11]
+_GROUP_PRIORITY_BY_NAME = {
+    "Questionnaire 1": [12, 18, 13, 11],
+    "Questionnaire 1 EN": [24, 30, 25, 23],
+}
 
 
 def order_questions_for_front(group_name: str, questions: list):
-    """Prioritize image-backed questions for Questionnaire 1, keep others shuffled."""
+    """Prioritize image-backed questions for selected groups, keep others shuffled."""
     items = list(questions)
     random.shuffle(items)
 
-    if group_name != "Questionnaire 1":
+    priority_ids = _GROUP_PRIORITY_BY_NAME.get(group_name)
+    if not priority_ids:
         return items
 
-    priority_index = {question_id: index for index, question_id in enumerate(_QUESTIONNAIRE_1_PRIORITY)}
+    priority_index = {question_id: index for index, question_id in enumerate(priority_ids)}
     prioritized = [q for q in items if q.id in priority_index]
     remaining = [q for q in items if q.id not in priority_index]
     prioritized.sort(key=lambda q: priority_index[q.id])
