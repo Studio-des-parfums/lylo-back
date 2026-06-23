@@ -34,19 +34,25 @@ logger = logging.getLogger("lylo.sessions_api")
 
 @router.post("/session/start", response_model=StartSessionResponse)
 async def start_session(body: StartSessionRequest, db: AsyncSession = Depends(get_db)):
+    owner_email = (body.owner_email or body.email or "").strip() or None
+    owner_type = None
+    owner_id = None
+    customer = None
     logger.info(
-        "[start_session] request language=%s voice_gender=%s question_count=%s mode=%s input_mode=%s avatar=%s email=%s",
+        "[start_session] request language=%s voice_gender=%s question_count=%s mode=%s input_mode=%s avatar=%s owner_email=%s",
         body.language,
         body.voice_gender,
         body.question_count,
         body.mode,
         body.input_mode,
         body.avatar,
-        bool(body.email),
+        bool(owner_email),
     )
-    if body.email:
-        customer = await crud.get_customer_by_email(db, body.email)
+    if owner_email:
+        customer = await crud.get_customer_by_email(db, owner_email)
         if customer:
+            owner_type = "customer"
+            owner_id = customer.id
             if int(customer.sessions_available) <= 0:
                 raise HTTPException(status_code=403, detail="Aucune session disponible")
             max_date = customer.max_date.date() if hasattr(customer.max_date, 'date') else customer.max_date
@@ -54,9 +60,11 @@ async def start_session(body: StartSessionRequest, db: AsyncSession = Depends(ge
                 raise HTTPException(status_code=403, detail="Date d'accès expirée")
             await crud.update_customer(db, customer.id, sessions_available=int(customer.sessions_available) - 1)
         else:
-            member = await crud.get_team_member_by_email(db, body.email)
+            member = await crud.get_team_member_by_email(db, owner_email)
             if not member:
                 raise HTTPException(status_code=404, detail="Email introuvable")
+            owner_type = "team"
+            owner_id = member.id
 
     try:
         result = await session_service.create_session(
@@ -65,7 +73,9 @@ async def start_session(body: StartSessionRequest, db: AsyncSession = Depends(ge
             question_count=body.question_count,
             mode=body.mode,
             input_mode=body.input_mode,
-            customer_email=body.email,
+            owner_email=owner_email,
+            owner_type=owner_type,
+            owner_id=owner_id,
             avatar=body.avatar,
         )
         logger.info(
@@ -74,7 +84,7 @@ async def start_session(body: StartSessionRequest, db: AsyncSession = Depends(ge
             result["room_name"],
         )
     except Exception as e:
-        if body.email and customer:
+        if owner_email and customer:
             await crud.update_customer(db, customer.id, sessions_available=int(customer.sessions_available) + 1)
         logger.exception("[start_session] failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Erreur création session: {e}")
@@ -238,14 +248,19 @@ async def generate_formulas(session_id: str, body: GenerateFormulasRequest = Gen
 
 
 def _send_formula_mail_bg(session_id: str, formula: dict) -> None:
-    # Mail client
+    # Mail participant
     meta = session_store.get_session_meta(session_id)
-    customer_email = meta.get("customer_email") if meta else None
-    if customer_email:
+    profile = session_store.get_user_profile(session_id) or {}
+    participant_email = (
+        formula.get("customer_email")
+        or profile.get("email")
+        or (meta.get("participant_email") if meta else None)
+    )
+    if participant_email:
         try:
-            mail_service.send_mail(customer_email, session_id, formula)
+            mail_service.send_mail(participant_email, session_id, formula)
         except Exception as e:
-            print(f"[mail] Erreur envoi mail formule au client {customer_email} : {e}")
+            print(f"[mail] Erreur envoi mail formule au participant {participant_email} : {e}")
 
     # Mail interne
     internal_email = get_settings().internal_email
@@ -283,9 +298,15 @@ async def select_formula(
         heart_notes=formula.get("heart_notes"),
         base_notes=formula.get("base_notes"),
         sizes=formula.get("sizes"),
-        customer_name=profile.get("name"),
-        customer_email=meta.get("customer_email"),
+        customer_name=" ".join(
+            part for part in [profile.get("first_name"), profile.get("last_name")] if part
+        ) or None,
+        customer_email=profile.get("email"),
         language=meta.get("language"),
+        participant_id=meta.get("participant_id"),
+        owner_type=meta.get("owner_type"),
+        owner_team_id=meta.get("owner_id") if meta.get("owner_type") == "team" else None,
+        owner_customer_id=meta.get("owner_id") if meta.get("owner_type") == "customer" else None,
     )
     result["reference"] = db_formula.reference
 
@@ -421,6 +442,10 @@ async def send_formula_mail_by_reference(
         "customer_name": db_formula.customer_name,
         "customer_email": db_formula.customer_email,
         "language": db_formula.language,
+        "participant_id": db_formula.participant_id,
+        "owner_type": db_formula.owner_type,
+        "owner_team_id": db_formula.owner_team_id,
+        "owner_customer_id": db_formula.owner_customer_id,
         "created_at": db_formula.created_at.isoformat() if db_formula.created_at else None,
     }
 
@@ -469,6 +494,10 @@ async def list_formulas(
                 "customer_name": r.customer_name,
                 "customer_email": r.customer_email,
                 "language": r.language,
+                "participant_id": r.participant_id,
+                "owner_type": r.owner_type,
+                "owner_team_id": r.owner_team_id,
+                "owner_customer_id": r.owner_customer_id,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
             for r in rows
@@ -491,6 +520,7 @@ async def save_formula(body: SaveFormulaRequest, db: AsyncSession = Depends(get_
         customer_name=body.customer_name,
         customer_email=body.customer_email,
         language=body.language,
+        participant_id=body.participant_id,
     )
     return {"reference": db_formula.reference}
 
@@ -564,6 +594,7 @@ async def save_multi_formulas(body: SaveMultiFormulaRequest, db: AsyncSession = 
             language=body.language,
             input_mode=body.input_mode,
             participant_color=sel.color,
+            participant_id=sel.participant_id,
         )
         saved.append({
             "color": sel.color,

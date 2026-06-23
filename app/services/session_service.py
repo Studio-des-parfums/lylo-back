@@ -58,7 +58,17 @@ async def _load_questions_from_db(language: str, count: int) -> list[dict]:
     return result
 
 
-async def create_session(language: str, voice_gender: str, question_count: int, mode: str = "guided", input_mode: str = "voice", customer_email: str | None = None, avatar: bool = True) -> dict:
+async def create_session(
+    language: str,
+    voice_gender: str,
+    question_count: int,
+    mode: str = "guided",
+    input_mode: str = "voice",
+    owner_email: str | None = None,
+    owner_type: str | None = None,
+    owner_id: int | None = None,
+    avatar: bool = True,
+) -> dict:
     settings = get_settings()
 
     session_id = str(uuid.uuid4())
@@ -80,7 +90,9 @@ async def create_session(language: str, voice_gender: str, question_count: int, 
         questions=questions,
         mode=mode,
         input_mode=input_mode,
-        customer_email=customer_email,
+        owner_email=owner_email,
+        owner_type=owner_type,
+        owner_id=owner_id,
         avatar=avatar,
     )
     logger.info(

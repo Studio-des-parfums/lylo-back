@@ -14,7 +14,8 @@ Crée une nouvelle session et retourne un token LiveKit pour que le frontend rej
   "language": "fr",
   "voice_gender": "female",
   "question_count": 12,
-  "mode": "guided"
+  "mode": "guided",
+  "owner_email": "dwain@gmail.com"
 }
 ```
 
@@ -24,6 +25,7 @@ Crée une nouvelle session et retourne un token LiveKit pour que le frontend rej
 | `voice_gender` | string | `"female"` \| `"male"` |
 | `question_count` | int | 1–12 |
 | `mode` | string | `"guided"` \| `"discovery"` |
+| `owner_email` | string | Email du compte propriétaire de la session (`teams` ou `customers`) |
 
 **Réponse :**
 ```json
@@ -93,6 +95,9 @@ Enregistre un champ du profil utilisateur.
 | `field` | Description |
 |---|---|
 | `first_name` | Prénom |
+| `last_name` | Nom |
+| `email` | Email du participant |
+| `phone` | Téléphone du participant |
 | `gender` | `"male"` \| `"female"` \| `"non-binary"` |
 | `age` | Âge (string) |
 | `has_allergies` | `"oui"` / `"non"` / `"yes"` / `"no"` |

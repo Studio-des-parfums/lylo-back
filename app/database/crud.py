@@ -9,6 +9,7 @@ from app.database.models import (
     Customer,
     GeneratedFormula,
     Ingredient,
+    Participant,
     Printer,
     Question,
     QuestionChoice,
@@ -106,6 +107,51 @@ async def delete_team_member(db: AsyncSession, member_id: int) -> bool:
     await db.delete(member)
     await db.commit()
     return True
+
+
+# --- Participant CRUD ---
+
+async def get_participant_by_email(db: AsyncSession, email: str) -> Participant | None:
+    result = await db.execute(select(Participant).where(Participant.email == email))
+    return result.scalar_one_or_none()
+
+
+async def get_participant_by_id(db: AsyncSession, participant_id: int) -> Participant | None:
+    result = await db.execute(select(Participant).where(Participant.id == participant_id))
+    return result.scalar_one_or_none()
+
+
+async def get_all_participants(db: AsyncSession) -> list[Participant]:
+    result = await db.execute(select(Participant))
+    return result.scalars().all()
+
+
+async def create_participant(db: AsyncSession, **kwargs) -> Participant:
+    participant = Participant(**kwargs)
+    db.add(participant)
+    await db.commit()
+    await db.refresh(participant)
+    return participant
+
+
+async def update_participant(db: AsyncSession, participant_id: int, **kwargs) -> Participant | None:
+    participant = await get_participant_by_id(db, participant_id)
+    if not participant:
+        return None
+    for field, value in kwargs.items():
+        setattr(participant, field, value)
+    await db.commit()
+    await db.refresh(participant)
+    return participant
+
+
+async def upsert_participant(db: AsyncSession, **kwargs) -> Participant:
+    email = kwargs.get("email")
+    if email:
+        participant = await get_participant_by_email(db, email)
+        if participant:
+            return await update_participant(db, participant.id, **kwargs)
+    return await create_participant(db, **kwargs)
 
 
 # --- Printer CRUD ---

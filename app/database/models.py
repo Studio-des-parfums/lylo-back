@@ -27,6 +27,21 @@ class TeamMember(Base):
     phone = Column(String(50))
 
 
+class Participant(Base):
+    __tablename__ = "participants"
+
+    id = Column(Integer, primary_key=True, index=True)
+    first_name = Column(String(100), nullable=True)
+    last_name = Column(String(100), nullable=True)
+    email = Column(String(255), unique=True, index=True, nullable=True)
+    phone = Column(String(50), nullable=True)
+    gender = Column(String(30), nullable=True)
+    age = Column(String(30), nullable=True)
+    has_allergies = Column(String(10), nullable=True)
+    allergies = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class Printer(Base):
     __tablename__ = "printers"
 
@@ -115,4 +130,12 @@ class GeneratedFormula(Base):
     language = Column(String(10), nullable=True)
     input_mode = Column(String(20), nullable=True)
     participant_color = Column(String(30), nullable=True)
+    participant_id = Column(Integer, ForeignKey("participants.id"), nullable=True, index=True)
+    owner_type = Column(String(20), nullable=True)
+    owner_team_id = Column(Integer, ForeignKey("teams.id"), nullable=True, index=True)
+    owner_customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    participant = relationship("Participant")
+    owner_team = relationship("TeamMember")
+    owner_customer = relationship("Customer")

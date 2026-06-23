@@ -10,6 +10,7 @@ class StartSessionRequest(BaseModel):
     mode: Literal["guided", "discovery"] = "guided"
     input_mode: Literal["voice", "click"] = "voice"
     email: str | None = None
+    owner_email: str | None = None
     avatar: bool = True
 
 
@@ -29,7 +30,7 @@ class SaveAnswerRequest(BaseModel):
 
 
 class SaveProfileRequest(BaseModel):
-    field: Literal["first_name", "gender", "age", "has_allergies", "allergies"]
+    field: Literal["first_name", "last_name", "email", "phone", "gender", "age", "has_allergies", "allergies"]
     value: str
 
 
@@ -85,6 +86,7 @@ class SaveFormulaRequest(BaseModel):
     formula: dict
     customer_name: str | None = None
     customer_email: str | None = None
+    participant_id: int | None = None
     language: Literal["fr", "en"] = "fr"
 
 
@@ -108,6 +110,7 @@ class MultiFormulaSelection(BaseModel):
     formula: dict
     customer_name: str | None = None
     customer_email: str | None = None
+    participant_id: int | None = None
 
 
 class SaveMultiFormulaRequest(BaseModel):

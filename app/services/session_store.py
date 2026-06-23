@@ -23,7 +23,9 @@ def save_session_meta(
     questions: list,
     mode: str = "guided",
     input_mode: str = "voice",
-    customer_email: str | None = None,
+    owner_email: str | None = None,
+    owner_type: str | None = None,
+    owner_id: int | None = None,
     avatar: bool = True,
 ) -> None:
     mapping = {
@@ -37,8 +39,12 @@ def save_session_meta(
         "avatar": avatar,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    if customer_email:
-        mapping["customer_email"] = customer_email
+    if owner_email:
+        mapping["owner_email"] = owner_email
+    if owner_type:
+        mapping["owner_type"] = owner_type
+    if owner_id is not None:
+        mapping["owner_id"] = owner_id
     with _lock:
         _meta[session_id] = mapping
         _index.add(session_id)
@@ -47,6 +53,14 @@ def save_session_meta(
 def get_session_meta(session_id: str) -> dict | None:
     with _lock:
         return dict(_meta[session_id]) if session_id in _meta else None
+
+
+def update_session_meta(session_id: str, **kwargs) -> bool:
+    with _lock:
+        if session_id not in _meta:
+            return False
+        _meta[session_id].update(kwargs)
+        return True
 
 
 def list_session_ids() -> list[str]:
