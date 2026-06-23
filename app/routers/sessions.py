@@ -277,6 +277,14 @@ def _send_formula_mail_bg(session_id: str, formula: dict) -> None:
             print(f"[mail] Erreur envoi mail fiche complète à {email} : {e}")
 
 
+def _extract_moodboard_fields(formula: dict) -> dict:
+    moodboard = formula.get("moodboard") or {}
+    return {
+        "moodboard_notes_key": moodboard.get("notes_key"),
+        "moodboard_image_url": moodboard.get("image_url"),
+    }
+
+
 @router.post("/session/{session_id}/select-formula")
 async def select_formula(
     session_id: str, body: SelectFormulaRequest, background_tasks: BackgroundTasks,
@@ -303,6 +311,7 @@ async def select_formula(
         ) or None,
         customer_email=profile.get("email"),
         language=meta.get("language"),
+        **_extract_moodboard_fields(formula),
         participant_id=meta.get("participant_id"),
         owner_type=meta.get("owner_type"),
         owner_team_id=meta.get("owner_id") if meta.get("owner_type") == "team" else None,
@@ -349,6 +358,7 @@ async def replace_note(
             heart_notes=formula.get("heart_notes"),
             base_notes=formula.get("base_notes"),
             sizes=formula.get("sizes"),
+            **_extract_moodboard_fields(formula),
         )
         background_tasks.add_task(_send_formula_mail_bg, session_id, formula)
     return result
@@ -494,6 +504,8 @@ async def list_formulas(
                 "customer_name": r.customer_name,
                 "customer_email": r.customer_email,
                 "language": r.language,
+                "moodboard_notes_key": r.moodboard_notes_key,
+                "moodboard_image_url": r.moodboard_image_url,
                 "participant_id": r.participant_id,
                 "owner_type": r.owner_type,
                 "owner_team_id": r.owner_team_id,
@@ -520,6 +532,7 @@ async def save_formula(body: SaveFormulaRequest, db: AsyncSession = Depends(get_
         customer_name=body.customer_name,
         customer_email=body.customer_email,
         language=body.language,
+        **_extract_moodboard_fields(formula),
         participant_id=body.participant_id,
     )
     return {"reference": db_formula.reference}
@@ -592,6 +605,7 @@ async def save_multi_formulas(body: SaveMultiFormulaRequest, db: AsyncSession = 
             customer_name=sel.customer_name,
             customer_email=sel.customer_email,
             language=body.language,
+            **_extract_moodboard_fields(formula),
             input_mode=body.input_mode,
             participant_color=sel.color,
             participant_id=sel.participant_id,

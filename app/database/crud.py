@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database.models import (
     Customer,
+    FormulaMoodboard,
     GeneratedFormula,
     Ingredient,
     Participant,
@@ -230,6 +231,23 @@ async def create_generated_formula(db: AsyncSession, **kwargs) -> GeneratedFormu
     await db.commit()
     await db.refresh(formula)
     return formula
+
+
+async def get_formula_moodboard_by_notes_key(
+    db: AsyncSession, notes_key: str
+) -> FormulaMoodboard | None:
+    result = await db.execute(
+        select(FormulaMoodboard).where(FormulaMoodboard.notes_key == notes_key)
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_formula_moodboard(db: AsyncSession, **kwargs) -> FormulaMoodboard:
+    moodboard = FormulaMoodboard(**kwargs)
+    db.add(moodboard)
+    await db.commit()
+    await db.refresh(moodboard)
+    return moodboard
 
 
 async def update_generated_formula_by_session(db: AsyncSession, session_id: str, **kwargs) -> GeneratedFormula | None:

@@ -128,6 +128,8 @@ class GeneratedFormula(Base):
     customer_name = Column(String(200), nullable=True)
     customer_email = Column(String(255), nullable=True)
     language = Column(String(10), nullable=True)
+    moodboard_notes_key = Column(String(64), nullable=True, index=True)
+    moodboard_image_url = Column(String(500), nullable=True)
     input_mode = Column(String(20), nullable=True)
     participant_color = Column(String(30), nullable=True)
     participant_id = Column(Integer, ForeignKey("participants.id"), nullable=True, index=True)
@@ -139,3 +141,16 @@ class GeneratedFormula(Base):
     participant = relationship("Participant")
     owner_team = relationship("TeamMember")
     owner_customer = relationship("Customer")
+
+
+class FormulaMoodboard(Base):
+    __tablename__ = "formula_moodboards"
+
+    id = Column(Integer, primary_key=True, index=True)
+    notes_key = Column(String(64), unique=True, index=True, nullable=False)
+    top_notes = Column(JSON, nullable=False)
+    heart_notes = Column(JSON, nullable=False)
+    base_notes = Column(JSON, nullable=False)
+    image_url = Column(String(500), nullable=False)
+    cloudinary_public_id = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

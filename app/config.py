@@ -25,6 +25,7 @@ class Settings(BaseSettings):
 
     # OpenAI
     openai_api_key: str
+    openai_image_model: str = "gpt-image-1"
 
     # Backend
     backend_url: str = "http://localhost:8000"

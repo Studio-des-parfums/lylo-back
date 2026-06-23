@@ -15,7 +15,7 @@ from openai import AsyncOpenAI
 from app.config import get_settings
 from app.database.connection import AsyncSessionLocal
 from app.database import crud
-from app.services import session_store
+from app.services import moodboard_service, session_store
 
 # ── Configuration des types de formules ──────────────────────────────
 _FORMULA_TYPE_CONFIGS: dict[str, dict] = {
@@ -374,6 +374,7 @@ async def generate_formulas(session_id: str, force_type: str | None = None) -> d
         )
         excluded_names |= formula.pop("_selected_names", set())
         excluded_profiles.add(formula["profile"])
+        formula = await moodboard_service.attach_moodboard_safe(formula, language)
         formulas.append(formula)
 
     session_store.save_generated_formulas(session_id, formulas)
@@ -409,6 +410,7 @@ async def generate_formulas_stateless(
         )
         excluded_names |= formula.pop("_selected_names", set())
         excluded_profiles.add(formula["profile"])
+        formula = await moodboard_service.attach_moodboard_safe(formula, language)
         formulas.append(formula)
 
     return {"formulas": formulas}
@@ -457,6 +459,7 @@ async def change_selected_formula_type(session_id: str, formula_type: str) -> di
         set(), set(), language, force_type=formula_type
     )
     formula.pop("_selected_names", None)
+    formula = await moodboard_service.attach_moodboard_safe(formula, language)
     session_store.save_selected_formula(session_id, formula)
     return {"formula": formula}
 
@@ -535,6 +538,9 @@ async def replace_note(session_id: str, note_type: str, old_note: str, new_note:
         booster,
         formula_type,
     )
+    session_meta = session_store.get_session_meta(session_id)
+    language = session_meta.get("language", "fr") if session_meta else "fr"
+    selected = await moodboard_service.attach_moodboard_safe(selected, language)
 
     session_store.save_selected_formula(session_id, selected)
     return {"formula": selected}

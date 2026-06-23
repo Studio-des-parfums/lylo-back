@@ -40,6 +40,30 @@ def upload_choice_image(choice_id: int, file_bytes: bytes, filename: str | None 
     return result["secure_url"]
 
 
+def upload_moodboard_image(notes_key: str, file_bytes: bytes, filename: str | None = None) -> tuple[str, str]:
+    """Upload un moodboard sur Cloudinary et retourne (secure_url, public_id)."""
+    settings = get_settings()
+    if not settings.cloudinary_cloud_name or not settings.cloudinary_api_key or not settings.cloudinary_api_secret:
+        raise RuntimeError("Configuration Cloudinary manquante")
+
+    _configure()
+    public_id = f"lylo/moodboards/{notes_key}"
+    file_obj = BytesIO(file_bytes)
+    file_obj.name = filename or f"moodboard_{notes_key}.png"
+    try:
+        result = cloudinary.uploader.upload(
+            file_obj,
+            public_id=public_id,
+            overwrite=False,
+            resource_type="image",
+            fetch_format="auto",
+            quality="auto",
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Échec de l'upload Cloudinary: {exc}") from exc
+    return result["secure_url"], public_id
+
+
 def delete_choice_image(image_url: str) -> None:
     """Supprime une image Cloudinary à partir de son URL."""
     _configure()
