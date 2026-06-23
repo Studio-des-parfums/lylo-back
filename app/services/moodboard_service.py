@@ -43,9 +43,11 @@ def _build_moodboard_prompt(formula: dict, language: str) -> str:
     formula_type = formula.get("formula_type", "mix")
 
     if language == "en":
-        return f"""Create an editorial luxury perfume moodboard with no text, no typography, no bottle, and no people.
+        return f"""Create a living, immersive luxury fragrance artwork with no text, no typography, no bottle, and no people.
 
-The moodboard must visually express this olfactory formula:
+This must not look like a simple 4-image collage, reference board, grid, or scrapbook. Create one cohesive visual world with depth, atmosphere, motion, and emotional intensity, as if the fragrance has come alive in a cinematic editorial scene.
+
+The artwork must visually express this olfactory formula:
 - Profile: {profile}
 - Formula type: {formula_type}
 - Profile description: {description}
@@ -53,11 +55,17 @@ The moodboard must visually express this olfactory formula:
 - Heart notes: {heart_notes}
 - Base notes: {base_notes}
 
-Style: premium fashion campaign board, layered materials, abstract textures, refined lighting, cinematic composition, sophisticated color palette, tactile ingredients, contemporary luxury aesthetic. The image should feel like a sensory board inspired by the fragrance notes, not a product packshot."""
+Style direction: high-end fashion campaign, cinematic composition, sensual materials, layered textures, organic transitions between ingredients, luminous haze, subtle particles, fluid movement, atmospheric depth, refined highlights, elegant shadows, premium contemporary luxury.
 
-    return f"""Crée un moodboard éditorial de parfum de luxe, sans texte, sans typographie, sans flacon et sans personnage.
+Make the image feel alive and sensory: drifting petals, suspended mist, glowing citrus oils, smoky woods, soft fabric movement, mineral reflections, botanical traces dissolving into one another. The composition should feel curated yet organic, like a dreamlike olfactory landscape.
 
-Le moodboard doit exprimer visuellement cette formule olfactive :
+Avoid literal packshot aesthetics. Avoid a flat collage. Avoid tiled frames. Prefer one unified artistic composition with strong visual storytelling."""
+
+    return f"""Crée une image de parfum de luxe immersive et vivante, sans texte, sans typographie, sans flacon et sans personnage.
+
+L’image ne doit surtout pas ressembler à un simple collage de 4 images, ni à une grille, ni à un scrapbook. Elle doit former un seul univers visuel cohérent, profond, atmosphérique et cinématographique, comme si le parfum prenait vie.
+
+L’image doit exprimer visuellement cette formule olfactive :
 - Profil : {profile}
 - Type de formule : {formula_type}
 - Description du profil : {description}
@@ -65,7 +73,11 @@ Le moodboard doit exprimer visuellement cette formule olfactive :
 - Notes de cœur : {heart_notes}
 - Notes de fond : {base_notes}
 
-Style : planche éditoriale premium, matières superposées, textures abstraites, lumière raffinée, composition cinématographique, palette sophistiquée, évocation sensorielle des ingrédients, esthétique luxe contemporaine. L’image doit ressembler à une interprétation visuelle du parfum, pas à une photo produit."""
+Direction artistique : campagne mode haut de gamme, composition cinématographique, matières sensuelles, textures superposées, transitions organiques entre les ingrédients, brume lumineuse, particules subtiles, sensation de mouvement, profondeur atmosphérique, reflets raffinés, ombres élégantes, luxe contemporain.
+
+L’image doit sembler vivante et sensorielle : pétales en suspension, vapeur délicate, huiles d’agrumes lumineuses, bois fumés, tissus en mouvement, éclats minéraux, traces botaniques qui se fondent les unes dans les autres. La composition doit être éditoriale, organique et presque onirique, comme un paysage olfactif.
+
+Évite absolument l’effet packshot. Évite le collage plat. Évite les cases séparées. Privilégie une seule composition artistique forte avec une vraie narration visuelle."""
 
 
 async def _generate_moodboard_image_bytes(formula: dict, language: str) -> bytes:
