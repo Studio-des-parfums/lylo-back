@@ -77,7 +77,6 @@ async def _generate_moodboard_image_bytes(formula: dict, language: str) -> bytes
         model=settings.openai_image_model,
         prompt=prompt,
         size="1024x1024",
-        response_format="b64_json",
     )
     b64_json = response.data[0].b64_json
     if not b64_json:
