@@ -1063,21 +1063,24 @@ async def entrypoint(ctx: JobContext):
 
     ctx.room.on("participant_disconnected", _on_participant_disconnected)
 
-    # ─── Démarrage : accueil ──────────────────────────────────────────────
-
-    logger.info(f"[GREETING] Appel generate_reply() — phase={state.phase.name} at {_time.time():.3f}")
-    try:
-        await session.generate_reply(instructions=initial_prompt)
-        logger.info(f"[GREETING] ✅ generate_reply() terminé at {_time.time():.3f}")
-    except Exception as e:
-        logger.exception(f"[GREETING] ❌ Erreur generate_reply(): {e}")
-
     async def _on_shutdown():
         await http.aclose()
         logger.info(f"[SHUTDOWN] Session terminée pour room={ctx.room.name}")
 
     ctx.add_shutdown_callback(_on_shutdown)
     logger.info(f"[ENTRYPOINT] ✅ Agent actif — room={ctx.room.name} phase={state.phase.name}")
+
+    # ─── Démarrage : accueil ──────────────────────────────────────────────
+
+    async def _run_initial_greeting() -> None:
+        logger.info(f"[GREETING] Appel generate_reply() — phase={state.phase.name} at {_time.time():.3f}")
+        try:
+            await session.generate_reply(instructions=initial_prompt)
+            logger.info(f"[GREETING] ✅ generate_reply() terminé at {_time.time():.3f}")
+        except Exception as e:
+            logger.exception(f"[GREETING] ❌ Erreur generate_reply(): {e}")
+
+    asyncio.create_task(_run_initial_greeting())
 
 
 # ─────────────────────────────────────────────
