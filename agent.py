@@ -21,7 +21,6 @@ from app.config import get_settings
 load_dotenv()
 
 settings = get_settings()
-_MISTRAL_LLM_TIMEOUT = httpx.Timeout(connect=10.0, read=20.0, write=20.0, pool=20.0)
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -939,7 +938,7 @@ async def entrypoint(ctx: JobContext):
 
     logger.info(
         f"[AGENT_SESSION] Création AgentSession — STT=nova-3 "
-        f"LLM={settings.mistral_model} TTS=sonic-3 "
+        f"LLM=gpt-4.1-mini TTS=sonic-3 "
         f"voice={config.get('voice_id')} lang={config.get('language', 'fr')}"
     )
     initial_prompt = get_prompt(state, config, ai_name, is_en, input_mode)
@@ -949,13 +948,7 @@ async def entrypoint(ctx: JobContext):
             model="nova-3",
             language=config.get("language", "fr"),
         ),
-        llm=openai.LLM(
-            model=settings.mistral_model,
-            api_key=settings.mistral_api_key,
-            base_url=settings.mistral_base_url,
-            timeout=_MISTRAL_LLM_TIMEOUT,
-            _strict_tool_schema=False,
-        ),
+        llm=openai.LLM(model="gpt-4.1-mini"),
         tts=cartesia.TTS(
             api_key=settings.cartesia_api_key,
             model="sonic-3",
