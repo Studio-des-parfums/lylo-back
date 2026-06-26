@@ -449,6 +449,12 @@ RÈGLE CRITIQUE : Dès que l'utilisateur dit non, dit merci, dit au revoir, ou e
 async def entrypoint(ctx: JobContext):
     import time as _time
 
+    def _has_non_avatar_participant() -> bool:
+        return any(
+            participant.identity != "bey-avatar-agent"
+            for participant in ctx.room.remote_participants.values()
+        )
+
     logger.info(f"[JOB] ✅ Job reçu — room={ctx.room.name} job_id={ctx.job.id} PID={os.getpid()} at {_time.time():.3f}")
     logger.debug(f"[JOB] Détails job: {ctx.job}")
 
@@ -504,6 +510,10 @@ async def entrypoint(ctx: JobContext):
     # Flags de contrôle
     paused = [False]
     user_interrupted = [False]
+    first_participant_ready = asyncio.Event()
+
+    if _has_non_avatar_participant():
+        first_participant_ready.set()
 
     # ─── Sous-classe agent avec override TTS et LLM ───────────────────────
 
@@ -1072,11 +1082,27 @@ async def entrypoint(ctx: JobContext):
             logger.warning(f"[AVATAR] Bey déconnecté, passage en mode audio-only pour room={ctx.room.name}")
             asyncio.ensure_future(send_state_update({"type": "avatar_disabled"}))
 
+    def _on_participant_connected(participant):
+        if participant.identity != "bey-avatar-agent":
+            logger.info(
+                f"[PARTICIPANT] ✅ Participant distant connecté — identity={participant.identity} room={ctx.room.name}"
+            )
+            first_participant_ready.set()
+
+    ctx.room.on("participant_connected", _on_participant_connected)
     ctx.room.on("participant_disconnected", _on_participant_disconnected)
 
     # ─── Démarrage : accueil ──────────────────────────────────────────────
 
     async def _run_initial_greeting() -> None:
+        if not first_participant_ready.is_set():
+            logger.info(f"[GREETING] Attente d'un participant distant avant accueil — room={ctx.room.name}")
+            try:
+                await asyncio.wait_for(first_participant_ready.wait(), timeout=20.0)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    f"[GREETING] Aucun participant distant après 20s, accueil quand même — room={ctx.room.name}"
+                )
         logger.info(f"[GREETING] Appel generate_reply() — phase={state.phase.name} at {_time.time():.3f}")
         try:
             await asyncio.wait_for(session.generate_reply(instructions=initial_prompt), timeout=25.0)
