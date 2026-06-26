@@ -55,6 +55,22 @@ def get_session_meta(session_id: str) -> dict | None:
         return dict(_meta[session_id]) if session_id in _meta else None
 
 
+def mark_session_pending_deletion(session_id: str, requested_at: str) -> bool:
+    with _lock:
+        if session_id not in _meta:
+            return False
+        _meta[session_id]["pending_delete_at"] = requested_at
+        return True
+
+
+def clear_session_pending_deletion(session_id: str) -> bool:
+    with _lock:
+        if session_id not in _meta:
+            return False
+        _meta[session_id].pop("pending_delete_at", None)
+        return True
+
+
 def update_session_meta(session_id: str, **kwargs) -> bool:
     with _lock:
         if session_id not in _meta:
