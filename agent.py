@@ -1103,9 +1103,19 @@ async def entrypoint(ctx: JobContext):
                 logger.warning(
                     f"[GREETING] Aucun participant distant après 20s, accueil quand même — room={ctx.room.name}"
                 )
+        if is_en:
+            greeting_instruction = (
+                f"Greet the user in one short sentence, introduce yourself as {ai_name}, "
+                "and ask for their first name. Do not call any tool until the user answers."
+            )
+        else:
+            greeting_instruction = (
+                f"Saluez l'utilisateur en une seule phrase courte, présentez-vous comme {ai_name}, "
+                "et demandez son prénom. N'appelez aucun outil tant que l'utilisateur n'a pas répondu."
+            )
         logger.info(f"[GREETING] Appel generate_reply() — phase={state.phase.name} at {_time.time():.3f}")
         try:
-            await asyncio.wait_for(session.generate_reply(instructions=initial_prompt), timeout=25.0)
+            await asyncio.wait_for(session.generate_reply(instructions=greeting_instruction), timeout=40.0)
             logger.info(f"[GREETING] ✅ generate_reply() terminé at {_time.time():.3f}")
         except asyncio.TimeoutError:
             logger.error("[GREETING] ❌ Timeout Mistral pendant le message d'accueil")
