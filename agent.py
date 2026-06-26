@@ -21,6 +21,7 @@ from app.config import get_settings
 load_dotenv()
 
 settings = get_settings()
+_MISTRAL_LLM_TIMEOUT = httpx.Timeout(connect=10.0, read=20.0, write=20.0, pool=20.0)
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -926,7 +927,11 @@ async def entrypoint(ctx: JobContext):
 
     # ─── Création de l'AgentSession ────────────────────────────────────────
 
-    logger.info(f"[AGENT_SESSION] Création AgentSession — STT=nova-3 LLM=gpt-4.1-mini TTS=sonic-3 voice={config.get('voice_id')} lang={config.get('language', 'fr')}")
+    logger.info(
+        f"[AGENT_SESSION] Création AgentSession — STT=nova-3 "
+        f"LLM={settings.mistral_model} TTS=sonic-3 "
+        f"voice={config.get('voice_id')} lang={config.get('language', 'fr')}"
+    )
     initial_prompt = get_prompt(state, config, ai_name, is_en, input_mode)
     agent = StatefulAgent(instructions=initial_prompt, tools=all_tools)
     session = AgentSession(
@@ -934,7 +939,13 @@ async def entrypoint(ctx: JobContext):
             model="nova-3",
             language=config.get("language", "fr"),
         ),
-        llm=openai.LLM(model="gpt-4.1-mini"),
+        llm=openai.LLM(
+            model=settings.mistral_model,
+            api_key=settings.mistral_api_key,
+            base_url=settings.mistral_base_url,
+            timeout=_MISTRAL_LLM_TIMEOUT,
+            _strict_tool_schema=False,
+        ),
         tts=cartesia.TTS(
             api_key=settings.cartesia_api_key,
             model="sonic-3",
@@ -1065,12 +1076,17 @@ async def entrypoint(ctx: JobContext):
 
     # ─── Démarrage : accueil ──────────────────────────────────────────────
 
-    logger.info(f"[GREETING] Appel generate_reply() — phase={state.phase.name} at {_time.time():.3f}")
-    try:
-        await session.generate_reply(instructions=initial_prompt)
-        logger.info(f"[GREETING] ✅ generate_reply() terminé at {_time.time():.3f}")
-    except Exception as e:
-        logger.exception(f"[GREETING] ❌ Erreur generate_reply(): {e}")
+    async def _run_initial_greeting() -> None:
+        logger.info(f"[GREETING] Appel generate_reply() — phase={state.phase.name} at {_time.time():.3f}")
+        try:
+            await asyncio.wait_for(session.generate_reply(instructions=initial_prompt), timeout=25.0)
+            logger.info(f"[GREETING] ✅ generate_reply() terminé at {_time.time():.3f}")
+        except asyncio.TimeoutError:
+            logger.error("[GREETING] ❌ Timeout Mistral pendant le message d'accueil")
+        except Exception as e:
+            logger.exception(f"[GREETING] ❌ Erreur generate_reply(): {e}")
+
+    asyncio.create_task(_run_initial_greeting())
 
     async def _on_shutdown():
         await http.aclose()
