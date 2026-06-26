@@ -3,10 +3,7 @@ import logging
 import time
 from pathlib import Path
 
-try:
-    import resend
-except ModuleNotFoundError:  # pragma: no cover - depends on optional install
-    resend = None
+import resend
 
 from app.config import get_settings
 from app.services import session_store
@@ -19,8 +16,7 @@ logger = logging.getLogger("lylo.mail")
 def _mail_context(to_email: str, subject: str) -> dict:
     settings = get_settings()
     return {
-        "provider": "resend" if resend else "unavailable",
-        "resend_module_available": resend is not None,
+        "provider": "resend",
         "resend_api_key_configured": bool(settings.resend_api_key),
         "from_email": settings.resend_from,
         "timeout_seconds": _MAIL_TIMEOUT_SECONDS,
@@ -31,18 +27,8 @@ def _mail_context(to_email: str, subject: str) -> dict:
 
 def _send_mail(to_email: str, subject: str, html: str) -> None:
     settings = get_settings()
-    if resend is None:
-        raise RuntimeError("Le package optionnel 'resend' n'est pas installé")
     if not settings.resend_api_key:
         raise RuntimeError("RESEND_API_KEY is not configured")
-    if not settings.resend_from:
-        raise RuntimeError("RESEND_FROM is not configured")
-    if settings.resend_from == "onboarding@resend.dev":
-        raise RuntimeError(
-            "RESEND_FROM is still set to onboarding@resend.dev. "
-            "This sender only works in Resend test mode for the account owner's email. "
-            "Verify your domain in Resend and use an address on that domain."
-        )
 
     start = time.perf_counter()
     context = _mail_context(to_email, subject)

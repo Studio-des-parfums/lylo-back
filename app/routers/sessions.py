@@ -1,8 +1,7 @@
 import random
 import unicodedata
 import logging
-import asyncio
-from datetime import date, datetime, timezone
+from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import Response
@@ -31,21 +30,6 @@ from app.services import formula_service, livekit_service, mail_service, pdf_ser
 
 router = APIRouter(prefix="/api", tags=["sessions"])
 logger = logging.getLogger("lylo.sessions_api")
-SESSION_DELETE_GRACE_SECONDS = 45
-
-
-async def _delete_session_after_grace(session_id: str, requested_at: str) -> None:
-    await asyncio.sleep(SESSION_DELETE_GRACE_SECONDS)
-    meta = session_store.get_session_meta(session_id)
-    if meta is None:
-        return
-    if meta.get("pending_delete_at") != requested_at:
-        logger.info("[delete_session] skip cleanup session_id=%s pending_delete_at changed", session_id)
-        return
-    room_name = meta.get("room_name", f"room_{session_id}")
-    session_store.delete_session(session_id)
-    await livekit_service.delete_room(room_name)
-    logger.info("[delete_session] cleanup applied session_id=%s room=%s", session_id, room_name)
 
 
 @router.post("/session/start", response_model=StartSessionResponse)
@@ -112,10 +96,6 @@ async def get_session(session_id: str):
     session = session_service.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    if session.get("pending_delete_at"):
-        session_store.clear_session_pending_deletion(session_id)
-        session.pop("pending_delete_at", None)
-        logger.info("[get_session] revived pending deletion session_id=%s", session_id)
     return session
 
 
@@ -123,21 +103,11 @@ async def get_session(session_id: str):
 async def delete_session(session_id: str, db: AsyncSession = Depends(get_db)):
     meta = session_store.get_session_meta(session_id)
     if meta is None:
-        return {"status": "ok", "session_id": session_id, "already_deleted": True}
-    requested_at = datetime.now(timezone.utc).isoformat()
-    session_store.mark_session_pending_deletion(session_id, requested_at)
-    asyncio.create_task(_delete_session_after_grace(session_id, requested_at))
-    logger.info(
-        "[delete_session] scheduled cleanup session_id=%s grace_seconds=%s",
-        session_id,
-        SESSION_DELETE_GRACE_SECONDS,
-    )
-    return {
-        "status": "ok",
-        "session_id": session_id,
-        "scheduled": True,
-        "grace_seconds": SESSION_DELETE_GRACE_SECONDS,
-    }
+        raise HTTPException(status_code=404, detail="Session not found")
+    room_name = meta.get("room_name", f"room_{session_id}")
+    session_store.delete_session(session_id)
+    await livekit_service.delete_room(room_name)
+    return {"status": "ok", "session_id": session_id}
 
 
 @router.get("/session_list")

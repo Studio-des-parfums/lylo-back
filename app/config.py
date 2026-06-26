@@ -27,11 +27,6 @@ class Settings(BaseSettings):
     openai_api_key: str
     openai_image_model: str = "gpt-image-1"
 
-    # Mistral
-    mistral_api_key: str
-    mistral_base_url: str = "https://api.mistral.ai/v1"
-    mistral_model: str = "mistral-small-latest"
-
     # Backend
     backend_url: str = "http://localhost:8000"
 

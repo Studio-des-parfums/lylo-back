@@ -8,7 +8,6 @@ Architecture :
 """
 
 import json
-import logging
 from decimal import Decimal, ROUND_DOWN
 
 from openai import AsyncOpenAI
@@ -17,8 +16,6 @@ from app.config import get_settings
 from app.database.connection import AsyncSessionLocal
 from app.database import crud
 from app.services import moodboard_service, session_store
-
-logger = logging.getLogger(__name__)
 
 # ── Configuration des types de formules ──────────────────────────────
 _FORMULA_TYPE_CONFIGS: dict[str, dict] = {
@@ -102,11 +99,7 @@ async def _ask_llm_for_formula(
 ) -> dict:
     """Demande au LLM de sélectionner les notes et de déduire le profil."""
 
-    settings = get_settings()
-    client = AsyncOpenAI(
-        api_key=settings.mistral_api_key,
-        base_url=settings.mistral_base_url,
-    )
+    client = AsyncOpenAI(api_key=get_settings().openai_api_key)
 
     # Filtrer les ingrédients déjà utilisés
     available = [i for i in ingredients if i["name"] not in excluded_names]
@@ -192,26 +185,15 @@ Notes de fond disponibles :
 
 Sélectionne les notes les plus cohérentes avec les préférences du client et crée une formule harmonieuse."""
 
-    request_params = {
-        "model": settings.mistral_model,
-        "messages": [
+    response = await client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        "temperature": 0.7,
-    }
-
-    try:
-        response = await client.chat.completions.create(
-            **request_params,
-            response_format={"type": "json_object"},
-        )
-    except Exception:
-        logger.warning(
-            "Mistral n'a pas accepte response_format=json_object, nouvelle tentative sans mode JSON strict.",
-            exc_info=True,
-        )
-        response = await client.chat.completions.create(**request_params)
+        response_format={"type": "json_object"},
+        temperature=0.7,
+    )
 
     return json.loads(response.choices[0].message.content)
 
