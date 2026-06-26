@@ -1063,9 +1063,12 @@ async def entrypoint(ctx: JobContext):
 
     ctx.room.on("participant_disconnected", _on_participant_disconnected)
 
+    shutdown_event = asyncio.Event()
+
     async def _on_shutdown():
         await http.aclose()
         logger.info(f"[SHUTDOWN] Session terminée pour room={ctx.room.name}")
+        shutdown_event.set()
 
     ctx.add_shutdown_callback(_on_shutdown)
     logger.info(f"[ENTRYPOINT] ✅ Agent actif — room={ctx.room.name} phase={state.phase.name}")
@@ -1081,6 +1084,7 @@ async def entrypoint(ctx: JobContext):
             logger.exception(f"[GREETING] ❌ Erreur generate_reply(): {e}")
 
     asyncio.create_task(_run_initial_greeting())
+    await shutdown_event.wait()
 
 
 # ─────────────────────────────────────────────
