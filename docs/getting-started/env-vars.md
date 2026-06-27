@@ -22,6 +22,8 @@ Créer un fichier `.env` à la racine du projet. Ce fichier ne doit **jamais** �
 | Variable | Défaut | Description |
 |---|---|---|
 | `BACKEND_URL` | `http://localhost:8000` | URL du backend API (utilisée par l'agent) |
+| `RESEND_API_KEY` | — | Clé API Resend pour l'envoi d'emails |
+| `RESEND_FROM` | — | Adresse expéditeur vérifiée sur un domaine validé dans Resend |
 | `SMTP_HOST` | — | Hôte SMTP pour les emails |
 | `SMTP_PORT` | — | Port SMTP |
 | `SMTP_USER` | — | Utilisateur SMTP |
@@ -43,4 +45,6 @@ VOICE_FR_MALE=voice_id_here
 VOICE_EN_FEMALE=voice_id_here
 VOICE_EN_MALE=voice_id_here
 BACKEND_URL=http://localhost:8000
+RESEND_API_KEY=re_...
+RESEND_FROM=no-reply@votredomaine.com
 ```

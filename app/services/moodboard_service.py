@@ -35,49 +35,51 @@ def build_notes_key(formula: dict) -> str:
 
 
 def _build_moodboard_prompt(formula: dict, language: str) -> str:
-    top_notes = ", ".join(formula.get("top_notes", []))
-    heart_notes = ", ".join(formula.get("heart_notes", []))
-    base_notes = ", ".join(formula.get("base_notes", []))
+    top_notes = formula.get("top_notes", [])
+    heart_notes = formula.get("heart_notes", [])
+    base_notes = formula.get("base_notes", [])
+    notes = top_notes + heart_notes + base_notes
+    notes_text = ", ".join(notes)
     profile = formula.get("profile", "")
     description = formula.get("profile_description", "")
     formula_type = formula.get("formula_type", "mix")
 
     if language == "en":
-        return f"""Create a living, immersive luxury fragrance artwork with no text, no typography, no bottle, and no people.
+        return f"""High-end luxury perfume advertisement, portrait orientation, A5 format.
 
-This must not look like a simple 4-image collage, reference board, grid, or scrapbook. Create one cohesive visual world with depth, atmosphere, motion, and emotional intensity, as if the fragrance has come alive in a cinematic editorial scene.
+A single elegant perfume bottle centered in the composition, surrounded by its key ingredients rendered as realistic botanical elements: {notes_text}.
 
-The artwork must visually express this olfactory formula:
+Flat lay composition with dramatic natural shadows on a solid background whose color reflects the scent mood.
+
+Scattered petals, sliced fruits or leaves arranged artfully around the bottle.
+
+Vivid, saturated colors. Editorial commercial product photography style. No text, no people, no hands, no existing perfume brand names, no recognizable luxury branding or logos. Ultra sharp, high resolution.
+
+The image must reflect this fragrance identity:
 - Profile: {profile}
 - Formula type: {formula_type}
 - Profile description: {description}
-- Top notes: {top_notes}
-- Heart notes: {heart_notes}
-- Base notes: {base_notes}
+- Top notes: {", ".join(top_notes)}
+- Heart notes: {", ".join(heart_notes)}
+- Base notes: {", ".join(base_notes)}"""
 
-Style direction: high-end fashion campaign, cinematic composition, sensual materials, layered textures, organic transitions between ingredients, luminous haze, subtle particles, fluid movement, atmospheric depth, refined highlights, elegant shadows, premium contemporary luxury.
+    return f"""Publicité de parfum de luxe haut de gamme, orientation portrait, format A5.
 
-Make the image feel alive and sensory: drifting petals, suspended mist, glowing citrus oils, smoky woods, soft fabric movement, mineral reflections, botanical traces dissolving into one another. The composition should feel curated yet organic, like a dreamlike olfactory landscape.
+Un unique flacon de parfum élégant centré dans la composition, entouré de ses ingrédients clés représentés comme des éléments botaniques réalistes : {notes_text}.
 
-Avoid literal packshot aesthetics. Avoid a flat collage. Avoid tiled frames. Prefer one unified artistic composition with strong visual storytelling."""
+Composition en flat lay avec des ombres naturelles marquées sur un fond uni dont la couleur reflète l’humeur olfactive du parfum.
 
-    return f"""Crée une image de parfum de luxe immersive et vivante, sans texte, sans typographie, sans flacon et sans personnage.
+Pétales, fruits tranchés ou feuilles disposés avec soin autour du flacon.
 
-L’image ne doit surtout pas ressembler à un simple collage de 4 images, ni à une grille, ni à un scrapbook. Elle doit former un seul univers visuel cohérent, profond, atmosphérique et cinématographique, comme si le parfum prenait vie.
+Couleurs vives et saturées. Style de photographie publicitaire éditoriale et commerciale. Sans texte, sans personne, sans mains, sans nom de marque de parfum existante, sans logo ni branding de luxe reconnaissable. Ultra net, haute résolution.
 
-L’image doit exprimer visuellement cette formule olfactive :
+L’image doit refléter cette identité parfum :
 - Profil : {profile}
 - Type de formule : {formula_type}
 - Description du profil : {description}
-- Notes de tête : {top_notes}
-- Notes de cœur : {heart_notes}
-- Notes de fond : {base_notes}
-
-Direction artistique : campagne mode haut de gamme, composition cinématographique, matières sensuelles, textures superposées, transitions organiques entre les ingrédients, brume lumineuse, particules subtiles, sensation de mouvement, profondeur atmosphérique, reflets raffinés, ombres élégantes, luxe contemporain.
-
-L’image doit sembler vivante et sensorielle : pétales en suspension, vapeur délicate, huiles d’agrumes lumineuses, bois fumés, tissus en mouvement, éclats minéraux, traces botaniques qui se fondent les unes dans les autres. La composition doit être éditoriale, organique et presque onirique, comme un paysage olfactif.
-
-Évite absolument l’effet packshot. Évite le collage plat. Évite les cases séparées. Privilégie une seule composition artistique forte avec une vraie narration visuelle."""
+- Notes de tête : {", ".join(top_notes)}
+- Notes de cœur : {", ".join(heart_notes)}
+- Notes de fond : {", ".join(base_notes)}"""
 
 
 async def _generate_moodboard_image_bytes(formula: dict, language: str) -> bytes:
