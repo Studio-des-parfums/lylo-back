@@ -66,6 +66,7 @@ class BatchAnswerItem(BaseModel):
 
 class BatchGenerateRequest(BaseModel):
     language: Literal["fr", "en"] = "fr"
+    brand: Literal["lylo", "ester"] = "lylo"
     gender: str
     age: str
     has_allergies: Literal["oui", "non"] = "non"
@@ -103,6 +104,7 @@ class MultiParticipant(BaseModel):
 
 class MultiGenerateRequest(BaseModel):
     language: Literal["fr", "en"] = "fr"
+    brand: Literal["lylo", "ester"] = "lylo"
     participants: list[MultiParticipant]
 
 

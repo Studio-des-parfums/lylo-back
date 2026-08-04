@@ -592,12 +592,20 @@ async def batch_generate_formulas(body: BatchGenerateRequest):
         }
         for a in body.answers
     }
-    result = await formula_service.generate_formulas_stateless(
-        answers=answers,
-        language=body.language,
-        has_allergies=body.has_allergies,
-        user_allergens_raw=body.allergies or "",
-    )
+    if body.brand == "ester":
+        result = await catalog_service.match_perfumes_stateless(
+            answers=answers,
+            language=body.language,
+            has_allergies=body.has_allergies,
+            user_allergens_raw=body.allergies or "",
+        )
+    else:
+        result = await formula_service.generate_formulas_stateless(
+            answers=answers,
+            language=body.language,
+            has_allergies=body.has_allergies,
+            user_allergens_raw=body.allergies or "",
+        )
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
@@ -616,12 +624,20 @@ async def multi_generate_formulas(body: MultiGenerateRequest):
             }
             for a in participant.answers
         }
-        result = await formula_service.generate_formulas_stateless(
-            answers=answers,
-            language=body.language,
-            has_allergies=participant.has_allergies,
-            user_allergens_raw=participant.allergies or "",
-        )
+        if body.brand == "ester":
+            result = await catalog_service.match_perfumes_stateless(
+                answers=answers,
+                language=body.language,
+                has_allergies=participant.has_allergies,
+                user_allergens_raw=participant.allergies or "",
+            )
+        else:
+            result = await formula_service.generate_formulas_stateless(
+                answers=answers,
+                language=body.language,
+                has_allergies=participant.has_allergies,
+                user_allergens_raw=participant.allergies or "",
+            )
         if "error" in result:
             raise HTTPException(status_code=400, detail=f"[{participant.color}] {result['error']}")
         results.append({

@@ -226,6 +226,28 @@ async def match_perfumes(session_id: str, count: int = 3) -> dict:
     return {"formulas": matches}
 
 
+async def match_perfumes_stateless(
+    answers: dict,
+    language: str = "fr",
+    has_allergies: str = "non",
+    user_allergens_raw: str = "",
+    count: int = 3,
+) -> dict:
+    if not answers:
+        return {"error": "Aucune réponse fournie", "formulas": []}
+
+    user_allergens = None
+    if has_allergies in ("oui", "yes") and user_allergens_raw:
+        user_allergens = [a.strip() for a in user_allergens_raw.replace(",", ";").split(";") if a.strip()]
+
+    catalog = get_catalog()
+    if not catalog:
+        return {"error": "Catalogue indisponible", "formulas": []}
+
+    matches = await _ask_llm_for_matches(answers, catalog, user_allergens, language, count)
+    return {"formulas": matches}
+
+
 def select_match(session_id: str, formula_index: int) -> dict:
     matches = session_store.get_generated_formulas(session_id)
     if not matches:
