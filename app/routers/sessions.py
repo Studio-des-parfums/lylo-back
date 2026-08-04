@@ -26,7 +26,7 @@ from app.models.schemas import (
     StartSessionResponse,
 )
 from app.config import get_settings
-from app.services import formula_service, livekit_service, mail_service, pdf_service, session_store, session_service
+from app.services import catalog_service, formula_service, livekit_service, mail_service, pdf_service, session_store, session_service
 
 router = APIRouter(prefix="/api", tags=["sessions"])
 logger = logging.getLogger("lylo.sessions_api")
@@ -39,12 +39,13 @@ async def start_session(body: StartSessionRequest, db: AsyncSession = Depends(ge
     owner_id = None
     customer = None
     logger.info(
-        "[start_session] request language=%s voice_gender=%s question_count=%s mode=%s input_mode=%s avatar=%s owner_email=%s",
+        "[start_session] request language=%s voice_gender=%s question_count=%s mode=%s input_mode=%s brand=%s avatar=%s owner_email=%s",
         body.language,
         body.voice_gender,
         body.question_count,
         body.mode,
         body.input_mode,
+        body.brand,
         body.avatar,
         bool(owner_email),
     )
@@ -73,6 +74,7 @@ async def start_session(body: StartSessionRequest, db: AsyncSession = Depends(ge
             question_count=body.question_count,
             mode=body.mode,
             input_mode=body.input_mode,
+            brand=body.brand,
             owner_email=owner_email,
             owner_type=owner_type,
             owner_id=owner_id,
@@ -241,7 +243,12 @@ async def generate_formulas(session_id: str, body: GenerateFormulasRequest = Gen
             status_code=400,
             detail="Profile incomplete, cannot generate formulas",
         )
-    result = await formula_service.generate_formulas(session_id, force_type=body.formula_type)
+    meta = session_store.get_session_meta(session_id) or {}
+    brand = meta.get("brand", "lylo")
+    if brand == "ester":
+        result = await catalog_service.match_perfumes(session_id, count=3)
+    else:
+        result = await formula_service.generate_formulas(session_id, force_type=body.formula_type)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
@@ -290,33 +297,66 @@ async def select_formula(
     session_id: str, body: SelectFormulaRequest, background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
-    result = formula_service.select_formula(session_id, body.formula_index)
+    meta = session_store.get_session_meta(session_id) or {}
+    brand = meta.get("brand", "lylo")
+
+    if brand == "ester":
+        result = catalog_service.select_match(session_id, body.formula_index)
+    else:
+        result = formula_service.select_formula(session_id, body.formula_index)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
 
     formula = result["formula"]
-    meta = session_store.get_session_meta(session_id) or {}
     profile = session_store.get_user_profile(session_id) or {}
-    db_formula = await crud.create_generated_formula(
-        db,
-        session_id=session_id,
-        profile=formula.get("profile"),
-        formula_type=formula.get("formula_type"),
-        top_notes=formula.get("top_notes"),
-        heart_notes=formula.get("heart_notes"),
-        base_notes=formula.get("base_notes"),
-        sizes=formula.get("sizes"),
-        customer_name=" ".join(
-            part for part in [profile.get("first_name"), profile.get("last_name")] if part
-        ) or None,
-        customer_email=profile.get("email"),
-        language=meta.get("language"),
-        **_extract_moodboard_fields(formula),
-        participant_id=meta.get("participant_id"),
-        owner_type=meta.get("owner_type"),
-        owner_team_id=meta.get("owner_id") if meta.get("owner_type") == "team" else None,
-        owner_customer_id=meta.get("owner_id") if meta.get("owner_type") == "customer" else None,
-    )
+    customer_name = " ".join(
+        part for part in [profile.get("first_name"), profile.get("last_name")] if part
+    ) or None
+
+    if brand == "ester":
+        db_formula = await crud.create_generated_formula(
+            db,
+            session_id=session_id,
+            brand="ester",
+            source="catalog",
+            profile=formula.get("brand"),
+            formula_type=None,
+            catalog_brand=formula.get("brand"),
+            catalog_perfume_name=formula.get("name"),
+            match_reason=formula.get("match_reason"),
+            top_notes=formula.get("top_notes"),
+            heart_notes=formula.get("heart_notes"),
+            base_notes=formula.get("base_notes"),
+            sizes=None,
+            customer_name=customer_name,
+            customer_email=profile.get("email"),
+            language=meta.get("language"),
+            participant_id=meta.get("participant_id"),
+            owner_type=meta.get("owner_type"),
+            owner_team_id=meta.get("owner_id") if meta.get("owner_type") == "team" else None,
+            owner_customer_id=meta.get("owner_id") if meta.get("owner_type") == "customer" else None,
+        )
+    else:
+        db_formula = await crud.create_generated_formula(
+            db,
+            session_id=session_id,
+            brand="lylo",
+            source="generated",
+            profile=formula.get("profile"),
+            formula_type=formula.get("formula_type"),
+            top_notes=formula.get("top_notes"),
+            heart_notes=formula.get("heart_notes"),
+            base_notes=formula.get("base_notes"),
+            sizes=formula.get("sizes"),
+            customer_name=customer_name,
+            customer_email=profile.get("email"),
+            language=meta.get("language"),
+            **_extract_moodboard_fields(formula),
+            participant_id=meta.get("participant_id"),
+            owner_type=meta.get("owner_type"),
+            owner_team_id=meta.get("owner_id") if meta.get("owner_type") == "team" else None,
+            owner_customer_id=meta.get("owner_id") if meta.get("owner_type") == "customer" else None,
+        )
     result["reference"] = db_formula.reference
 
     background_tasks.add_task(_send_formula_mail_bg, session_id, formula)
@@ -445,6 +485,10 @@ async def send_formula_mail_by_reference(
         "session_id": db_formula.session_id,
         "profile": db_formula.profile,
         "formula_type": db_formula.formula_type,
+        "source": db_formula.source,
+        "brand": db_formula.catalog_brand,
+        "name": db_formula.catalog_perfume_name,
+        "match_reason": db_formula.match_reason,
         "top_notes": db_formula.top_notes,
         "heart_notes": db_formula.heart_notes,
         "base_notes": db_formula.base_notes,

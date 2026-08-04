@@ -23,6 +23,7 @@ def save_session_meta(
     questions: list,
     mode: str = "guided",
     input_mode: str = "voice",
+    brand: str = "lylo",
     owner_email: str | None = None,
     owner_type: str | None = None,
     owner_id: int | None = None,
@@ -36,6 +37,7 @@ def save_session_meta(
         "questions": questions,
         "mode": mode,
         "input_mode": input_mode,
+        "brand": brand,
         "avatar": avatar,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }

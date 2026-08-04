@@ -121,6 +121,11 @@ class GeneratedFormula(Base):
     session_id = Column(String(100), index=True, nullable=False)
     profile = Column(String(100))
     formula_type = Column(String(20))
+    brand = Column(String(20), nullable=True, default="lylo")
+    source = Column(String(20), nullable=True, default="generated")  # generated | catalog
+    catalog_brand = Column(String(100), nullable=True)
+    catalog_perfume_name = Column(String(200), nullable=True)
+    match_reason = Column(Text, nullable=True)
     top_notes = Column(JSON)
     heart_notes = Column(JSON)
     base_notes = Column(JSON)

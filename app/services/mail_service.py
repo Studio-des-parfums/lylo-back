@@ -240,6 +240,112 @@ _LABELS: dict[str, dict[str, str]] = {
 }
 
 
+_CATALOG_LABELS: dict[str, dict[str, str]] = {
+    "fr": {
+        "subject": "Votre sélection de parfums",
+        "greeting": "Bonjour,",
+        "subtext": "Voici le parfum sélectionné pour vous.",
+        "top": "Notes de tête",
+        "heart": "Notes de cœur",
+        "base": "Notes de fond",
+        "goodbye": "Merci pour votre visite. Nous espérons vous retrouver très bientôt. À bientôt !",
+    },
+    "en": {
+        "subject": "Your perfume selection",
+        "greeting": "Hello,",
+        "subtext": "Here is the perfume selected for you.",
+        "top": "Top notes",
+        "heart": "Heart notes",
+        "base": "Base notes",
+        "goodbye": "Thank you for your visit. We hope to see you again very soon. See you soon!",
+    },
+}
+
+
+def _render_catalog_note_section(title: str, notes: list[str]) -> str:
+    if not notes:
+        return ""
+    rows = "".join(
+        f'<tr><td style="font-size:0.92rem;padding:3px 0;line-height:1.6;">{note}</td></tr>'
+        for note in notes
+    )
+    return (
+        f'<div style="margin-bottom:18px;">'
+        f'<p style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.09em;color:#aaa;font-weight:bold;'
+        f'margin:0 0 7px;padding-bottom:5px;border-bottom:1px solid #efefef;">{title}</p>'
+        f'<table style="border-collapse:collapse;width:100%;"><tbody>{rows}</tbody></table>'
+        f"</div>"
+    )
+
+
+def _build_catalog_formula_html(formula: dict, language: str = "fr") -> str:
+    """Build the perfume email HTML for a catalog match (Esther) — no sizes/ml."""
+    labels = _CATALOG_LABELS.get(language, _CATALOG_LABELS["fr"])
+    brand = formula.get("brand", "")
+    name = formula.get("name", "")
+    title = f"{name} — {brand}" if brand else name
+    match_reason = formula.get("match_reason", "")
+
+    notes_html = (
+        _render_catalog_note_section(labels["top"], formula.get("top_notes", []))
+        + _render_catalog_note_section(labels["heart"], formula.get("heart_notes", []))
+        + _render_catalog_note_section(labels["base"], formula.get("base_notes", []))
+    )
+
+    return f"""<!DOCTYPE html>
+<html lang="{language}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{title}</title>
+</head>
+<body style="font-family:Arial,sans-serif;background:#faf9f7;margin:0;padding:0;color:#333;">
+  <div style="max-width:600px;margin:0 auto;background:#ffffff;padding:40px 36px;">
+    <p style="font-size:1rem;margin:0 0 4px;">{labels["greeting"]}</p>
+    <p style="font-size:1rem;color:#666;margin:0 0 28px;">{labels["subtext"]}</p>
+    <p style="font-size:1.4rem;font-weight:bold;letter-spacing:0.04em;margin:0 0 6px;">{title}</p>
+    <p style="font-style:italic;color:#888;font-size:0.92rem;margin:0 0 28px;">{match_reason}</p>
+    {notes_html}
+    <p style="margin-top:40px;padding-top:24px;border-top:1px solid #efefef;font-size:0.88rem;color:#888;font-style:italic;line-height:1.6;">{labels["goodbye"]}</p>
+  </div>
+</body>
+</html>"""
+
+
+def _build_catalog_internal_html(formula: dict) -> str:
+    """Build the internal recap email for a catalog match (Esther)."""
+    brand = formula.get("brand", "")
+    name = formula.get("name", "")
+    title = f"{name} — {brand}" if brand else name
+    match_reason = formula.get("match_reason", "")
+    family = formula.get("family", "")
+
+    notes_html = (
+        _render_catalog_note_section("Notes de tête", formula.get("top_notes", []))
+        + _render_catalog_note_section("Notes de cœur", formula.get("heart_notes", []))
+        + _render_catalog_note_section("Notes de fond", formula.get("base_notes", []))
+    )
+
+    return f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>[Interne] {title}</title>
+</head>
+<body style="font-family:Arial,sans-serif;background:#faf9f7;margin:0;padding:0;color:#333;">
+  <div style="max-width:600px;margin:0 auto;background:#ffffff;padding:40px 36px;">
+    <p style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;color:#bbb;margin:0 0 16px;">
+      Récapitulatif interne — Esther (parfum du catalogue)
+    </p>
+    <p style="font-size:1.4rem;font-weight:bold;letter-spacing:0.04em;margin:0 0 4px;">{title}</p>
+    <p style="font-style:italic;color:#888;font-size:0.92rem;margin:0 0 6px;">{match_reason}</p>
+    <p style="font-size:0.82rem;color:#aaa;margin:0 0 28px;">Famille olfactive : {family}</p>
+    {notes_html}
+  </div>
+</body>
+</html>"""
+
+
 def _top3_by_ml(notes: list[dict]) -> list[dict]:
     return sorted(notes, key=lambda n: n.get("ml", 0), reverse=True)[:3]
 
@@ -396,6 +502,13 @@ def send_internal_formula_mail(to_email: str, session_id: str, formula: dict) ->
     if not settings.resend_api_key:
         raise RuntimeError("RESEND_API_KEY is not configured")
 
+    if formula.get("source") == "catalog":
+        html = _build_catalog_internal_html(formula)
+        title = f"{formula.get('name', 'parfum')} — {formula.get('brand', '')}"
+        subject = f"[Esther Interne] {title} — Fiche complète"
+        _send_mail(to_email, subject, html)
+        return
+
     html = _build_internal_html(formula)
 
     session_meta = session_store.get_session_meta(session_id)
@@ -414,8 +527,14 @@ def send_mail(to_email: str, session_id: str, formula: dict) -> None:
 
     session_meta = session_store.get_session_meta(session_id)
     language = session_meta.get("language", "fr") if session_meta else "fr"
-    labels = _LABELS.get(language, _LABELS["fr"])
 
+    if formula.get("source") == "catalog":
+        labels = _CATALOG_LABELS.get(language, _CATALOG_LABELS["fr"])
+        html = _build_catalog_formula_html(formula, language=language)
+        _send_mail(to_email, labels["subject"], html)
+        return
+
+    labels = _LABELS.get(language, _LABELS["fr"])
     notes_30ml = formula.get("sizes", {}).get("30ml", {})
     html = _build_formula_html(
         profile=formula.get("profile", ""),
@@ -434,15 +553,21 @@ def send_formula_mail_stateless(to_email: str, formula: dict, language: str = "f
     if not settings.resend_api_key:
         raise RuntimeError("RESEND_API_KEY is not configured")
 
-    labels = _LABELS.get(language, _LABELS["fr"])
-    notes_30ml = formula.get("sizes", {}).get("30ml", {})
-    html = _build_formula_html(
-        profile=formula.get("profile", ""),
-        description=formula.get("description", ""),
-        notes_30ml=notes_30ml,
-        language=language,
-        image_base_url=settings.backend_url,
-    )
+    is_catalog = formula.get("source") == "catalog"
+
+    if is_catalog:
+        labels = _CATALOG_LABELS.get(language, _CATALOG_LABELS["fr"])
+        html = _build_catalog_formula_html(formula, language=language)
+    else:
+        labels = _LABELS.get(language, _LABELS["fr"])
+        notes_30ml = formula.get("sizes", {}).get("30ml", {})
+        html = _build_formula_html(
+            profile=formula.get("profile", ""),
+            description=formula.get("description", ""),
+            notes_30ml=notes_30ml,
+            language=language,
+            image_base_url=settings.backend_url,
+        )
 
     _send_mail(to_email, labels["subject"], html)
 
@@ -450,6 +575,11 @@ def send_formula_mail_stateless(to_email: str, formula: dict, language: str = "f
     if not internal_email:
         return
     for email in [e.strip() for e in internal_email.split(",") if e.strip()]:
-        html_internal = _build_internal_html(formula)
-        profile = formula.get("profile", "formule")
-        _send_mail(email, f"[Lylo Interne] {profile} — Fiche complète", html_internal)
+        if is_catalog:
+            html_internal = _build_catalog_internal_html(formula)
+            title = f"{formula.get('name', 'parfum')} — {formula.get('brand', '')}"
+            _send_mail(email, f"[Esther Interne] {title} — Fiche complète", html_internal)
+        else:
+            html_internal = _build_internal_html(formula)
+            profile = formula.get("profile", "formule")
+            _send_mail(email, f"[Lylo Interne] {profile} — Fiche complète", html_internal)

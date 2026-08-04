@@ -211,10 +211,10 @@ async def delete_printer(db: AsyncSession, printer_id: int) -> bool:
 
 # --- GeneratedFormula CRUD ---
 
-async def _generate_reference(db: AsyncSession) -> str:
+async def _generate_reference(db: AsyncSession, brand: str = "lylo") -> str:
     today = datetime.now()
     date_str = today.strftime("%d%m%Y")
-    prefix = f"lylo-{date_str}-"
+    prefix = f"{brand}-{date_str}-"
     result = await db.execute(
         select(func.count(GeneratedFormula.id)).where(
             GeneratedFormula.reference.like(f"{prefix}%")
@@ -225,7 +225,7 @@ async def _generate_reference(db: AsyncSession) -> str:
 
 
 async def create_generated_formula(db: AsyncSession, **kwargs) -> GeneratedFormula:
-    reference = await _generate_reference(db)
+    reference = await _generate_reference(db, brand=kwargs.get("brand") or "lylo")
     formula = GeneratedFormula(reference=reference, **kwargs)
     db.add(formula)
     await db.commit()

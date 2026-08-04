@@ -9,6 +9,7 @@ class StartSessionRequest(BaseModel):
     question_count: int = Field(default=1, ge=1, le=12)
     mode: Literal["guided", "discovery"] = "guided"
     input_mode: Literal["voice", "click"] = "voice"
+    brand: Literal["lylo", "ester"] = "lylo"
     email: str | None = None
     owner_email: str | None = None
     avatar: bool = True

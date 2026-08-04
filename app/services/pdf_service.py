@@ -100,9 +100,15 @@ def generate_formula_pdf(formula: dict) -> bytes:
     # Ligne décorative
     story.append(HRFlowable(width="100%", thickness=1, color=C_SECONDARY, spaceAfter=16))
 
-    # Nom du profil
-    profile = formula.get("profile", "")
-    story.append(Paragraph(profile, PROFILE_STYLE))
+    # Titre : marque + nom pour un parfum du catalogue (Esther), profil sinon (Lylo)
+    if formula.get("source") == "catalog":
+        title = formula.get("name", "")
+        brand_name = formula.get("brand", "")
+        if brand_name:
+            title = f"{title} — {brand_name}"
+    else:
+        title = formula.get("profile", "")
+    story.append(Paragraph(title, PROFILE_STYLE))
 
     # Date + référence sur la même ligne
     date = formula.get("date", "")
@@ -118,11 +124,12 @@ def generate_formula_pdf(formula: dict) -> bytes:
     story.append(Spacer(1, 0.8 * cm))
     story.append(HRFlowable(width="100%", thickness=0.5, color=C_SECONDARY, spaceAfter=0))
 
-    # Notes
+    # Notes — accepte le format {"notes": {"top": [...]}} ou top_notes/heart_notes/base_notes
+    notes_obj = formula.get("notes", {})
     notes_map = [
-        ("NOTES DE TÊTE", formula.get("notes", {}).get("top", [])),
-        ("NOTES DE CŒUR", formula.get("notes", {}).get("heart", [])),
-        ("NOTES DE FOND", formula.get("notes", {}).get("base", [])),
+        ("NOTES DE TÊTE", notes_obj.get("top") or formula.get("top_notes", [])),
+        ("NOTES DE CŒUR", notes_obj.get("heart") or formula.get("heart_notes", [])),
+        ("NOTES DE FOND", notes_obj.get("base") or formula.get("base_notes", [])),
     ]
 
     for label, notes in notes_map:

@@ -64,6 +64,7 @@ async def create_session(
     question_count: int,
     mode: str = "guided",
     input_mode: str = "voice",
+    brand: str = "lylo",
     owner_email: str | None = None,
     owner_type: str | None = None,
     owner_id: int | None = None,
@@ -90,13 +91,14 @@ async def create_session(
         questions=questions,
         mode=mode,
         input_mode=input_mode,
+        brand=brand,
         owner_email=owner_email,
         owner_type=owner_type,
         owner_id=owner_id,
         avatar=avatar,
     )
     logger.info(
-        "[session] session meta saved session_id=%s room=%s language=%s voice_gender=%s questions=%s mode=%s input_mode=%s avatar=%s",
+        "[session] session meta saved session_id=%s room=%s language=%s voice_gender=%s questions=%s mode=%s input_mode=%s brand=%s avatar=%s",
         session_id,
         room_name,
         language,
@@ -104,6 +106,7 @@ async def create_session(
         len(questions),
         mode,
         input_mode,
+        brand,
         avatar,
     )
 

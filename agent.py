@@ -129,6 +129,7 @@ def get_prompt(state: SessionState, config: dict, ai_name: str, is_en: bool, inp
     phase = state.phase
     lang = "en" if is_en else "fr"
     personality = (PERSONALITY_EN if is_en else PERSONALITY_FR).format(ai_name=ai_name)
+    is_esther = config.get("brand", "lylo") == "ester"
 
     questions = config.get("questions", [])
     num_questions = len(questions)
@@ -301,14 +302,32 @@ Une fois que l'utilisateur donne 2 choix :
 
     elif phase == AgentPhase.INTENSITY:
         first_name = state.profile.get("first_name", "")
-        if is_en:
+        if is_esther:
+            if is_en:
+                mission = f"""FIRST action (before speaking): call notify_asking_intensity(). Then in ONE short reply, tell {first_name} you're now going to find the perfumes from the catalog that best match their preferences. Immediately call generate_catalog_matches() — no question needed here."""
+            else:
+                mission = f"""PREMIÈRE action (avant de parler) : appelez notify_asking_intensity(). Puis en UNE SEULE réplique courte, annoncez à {first_name} que vous allez maintenant trouver les parfums du catalogue qui correspondent le mieux à ses préférences. Appelez IMMÉDIATEMENT generate_catalog_matches() — aucune question nécessaire ici."""
+        elif is_en:
             mission = f"""FIRST action (before speaking): call notify_asking_intensity(). Then in ONE reply, ask {first_name} their fragrance intensity preference: "Before I create your formulas — do you prefer fragrances that are rather fresh and light, powerful and intense, or a mix of both?" Wait for their answer. Once they answer, call generate_formulas(formula_type=...) with 'frais', 'puissant' or 'mix'. If unsure, recommend 'mix' and call generate_formulas(formula_type='mix')."""
         else:
             mission = f"""PREMIÈRE action (avant de parler) : appelez notify_asking_intensity(). Puis en UNE SEULE réplique, demandez à {first_name} sa préférence d'intensité : "Avant de créer vos formules — vous préférez des parfums plutôt frais et légers, plutôt puissants et intenses, ou un mix des deux ?" Attendez sa réponse. Une fois qu'il/elle répond, appelez generate_formulas(formula_type=...) avec 'frais', 'puissant' ou 'mix'. Si indécis, recommandez 'mix' et appelez generate_formulas(formula_type='mix')."""
 
     elif phase == AgentPhase.PRESENT_FORMULAS:
         first_name = state.profile.get("first_name", "")
-        if is_en:
+        if is_esther:
+            if is_en:
+                mission = f"""Present the matched perfumes to {first_name} with enthusiasm. For each one:
+1. The brand and perfume name (e.g. "The first one is Santal 33 by Le Labo")
+2. A short atmospheric description based on its match reason — do NOT enumerate notes one by one unless asked
+
+Then ask which one they prefer. Once the user clearly chooses one, call IMMEDIATELY select_formula(formula_index=N) matching their choice (0 for the first, 1 for the second, 2 for the third if there is one)."""
+            else:
+                mission = f"""Présentez les parfums sélectionnés à {first_name} avec enthousiasme. Pour chacun :
+1. La marque et le nom du parfum (ex : "Le premier est Santal 33 de Le Labo")
+2. Une courte description atmosphérique basée sur la raison de sa sélection — ne listez PAS les notes une par une sauf si demandé
+
+Demandez ensuite lequel l'utilisateur préfère. Dès qu'il/elle choisit clairement, appelez IMMÉDIATEMENT select_formula(formula_index=N) correspondant à son choix (0 pour le premier, 1 pour le deuxième, 2 pour le troisième s'il y en a un)."""
+        elif is_en:
             mission = f"""Present the 2 generated perfume formulas to {first_name} with enthusiasm. For each formula:
 1. The profile name (e.g. "Your first formula is called The Influencer!")
 2. A short description of the profile in your own words
@@ -335,7 +354,17 @@ Si l'utilisateur veut changer d'intensité avant de choisir : appelez generate_f
         first_name = state.profile.get("first_name", "")
         mode = config.get("mode", "guided")
 
-        if mode == "discovery":
+        if is_esther:
+            if is_en:
+                mission = f"""You are now discussing the selected perfume with {first_name}. Talk about it with enthusiasm — its brand, character, what makes it unique, its olfactory atmosphere. Answer any questions about it as a perfumery expert. This is a real commercial perfume, not a custom formula — there is no note replacement or intensity change available.
+
+**Transition to standby:** Once the user is satisfied, ask "Any more questions about your perfume?" If no more questions, say ONE short farewell sentence then IMMEDIATELY call enter_pause_mode(). Do NOT mention any wake phrase. If the user says "thank you", "goodbye", or anything similar after your farewell — call enter_pause_mode() immediately without saying anything more."""
+            else:
+                mission = f"""Vous discutez maintenant du parfum sélectionné avec {first_name}. Parlez-en avec enthousiasme — sa marque, son caractère, ce qui le rend unique, son ambiance olfactive. Répondez à toute question à ce sujet en tant qu'expert en parfumerie. C'est un vrai parfum du commerce, pas une formule sur-mesure — aucun remplacement de note ni changement d'intensité n'est disponible.
+
+**Transition vers la veille :** Une fois l'utilisateur satisfait, demandez "Avez-vous d'autres questions sur votre parfum ?" Si plus de questions, dites UNE courte phrase d'au revoir puis appelez IMMÉDIATEMENT enter_pause_mode(). Ne mentionnez AUCUNE phrase de réveil vocal. Si l'utilisateur dit "merci", "au revoir" ou quoi que ce soit après votre au revoir — appelez enter_pause_mode() immédiatement sans rien dire de plus."""
+
+        elif mode == "discovery":
             if is_en:
                 mission = f"""You are now in the discovery & customization phase with {first_name}.
 
@@ -494,6 +523,8 @@ async def entrypoint(ctx: JobContext):
     voice_gender = config.get("voice_gender", "female")
     ai_name = "Rose" if voice_gender == "female" else "Florian"
     input_mode = config.get("input_mode", "voice")
+    brand = config.get("brand", "lylo")
+    is_esther = brand == "ester"
     use_avatar = [config.get("avatar", True)]
     _first_tts_call = [True]
 
@@ -792,8 +823,26 @@ async def entrypoint(ctx: JobContext):
         return json.dumps(data, ensure_ascii=False) + "\n\n" + next_prompt
 
     @function_tool()
+    async def generate_catalog_matches():
+        """Selects 2-3 real perfumes from the catalog matching the user's preferences. / Sélectionne 2-3 parfums réels du catalogue correspondant aux préférences de l'utilisateur."""
+        logger.info("[CATALOG] generate_catalog_matches")
+        await send_state_update({"type": "state_change", "state": "generating_formulas"})
+        resp = await http.post(f"/api/session/{session_id}/generate-formulas", json={})
+        if resp.status_code != 200:
+            detail = resp.json().get("detail", "Unable to find matching perfumes" if is_en else "Impossible de trouver des parfums correspondants")
+            return f"Error: {detail}" if is_en else f"Erreur: {detail}"
+        data = resp.json()
+        await send_state_update({
+            "type": "formulas_generated",
+            "state": "completed",
+            "formulas": data["formulas"],
+        })
+        next_prompt = await advance_to(AgentPhase.PRESENT_FORMULAS)
+        return json.dumps(data, ensure_ascii=False) + "\n\n" + next_prompt
+
+    @function_tool()
     async def select_formula(formula_index: int):
-        """Saves the user's chosen formula (0 for first, 1 for second). / Sauvegarde la formule choisie (0 pour la première, 1 pour la deuxième)."""
+        """Saves the user's chosen formula/perfume by its index (0-based: 0, 1, or 2 if a third option exists). / Sauvegarde la formule ou le parfum choisi par son index (0-based : 0, 1, ou 2 si une troisième option existe)."""
         state.selected_formula_index = formula_index
         logger.info(f"[FORMULAS] select_formula index={formula_index}")
         resp = await http.post(
@@ -914,13 +963,13 @@ async def entrypoint(ctx: JobContext):
         notify_asking_top_2,
         notify_asking_intensity,
         save_answer,
-        generate_formulas,
         select_formula,
-        get_available_ingredients,
-        replace_note,
-        change_formula_type,
         enter_pause_mode,
     ]
+    if is_esther:
+        all_tools.append(generate_catalog_matches)
+    else:
+        all_tools += [generate_formulas, get_available_ingredients, replace_note, change_formula_type]
     if input_mode == "click":
         all_tools += [request_top_2_click, request_bottom_2_click]
 
