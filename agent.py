@@ -492,7 +492,7 @@ async def entrypoint(ctx: JobContext):
 
     is_en = config.get("language", "fr") == "en"
     voice_gender = config.get("voice_gender", "female")
-    ai_name = "Rose" if voice_gender == "female" else "Florian"
+    ai_name = "Marine" if voice_gender == "female" else "Florian"
     input_mode = config.get("input_mode", "voice")
     use_avatar = [config.get("avatar", True)]
     _first_tts_call = [True]
