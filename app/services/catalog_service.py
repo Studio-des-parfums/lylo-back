@@ -63,6 +63,7 @@ def _load_catalog_from_excel() -> list[dict]:
             "heart_materials": (row[7] or "").strip() if row[7] else "",
             "base_notes": (row[8] or "").strip() if row[8] else "",
             "base_materials": (row[9] or "").strip() if row[9] else "",
+            "image_url": (row[11] or "").strip() if len(row) > 11 and row[11] else "",
         })
 
     logger.info("[catalog] %d parfums chargés depuis %s", len(perfumes), _CATALOG_PATH.name)
@@ -195,6 +196,7 @@ def _to_result_entry(perfume: dict, match_reason: str) -> dict:
         "heart_notes": _split_notes(perfume["heart_notes"]),
         "base_notes": _split_notes(perfume["base_notes"]),
         "match_reason": match_reason,
+        "image_url": perfume.get("image_url", ""),
     }
 
 
