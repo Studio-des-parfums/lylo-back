@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # Backend
     backend_url: str = "http://localhost:8000"
 
+    # Ingredients API (dashboard)
+    ingredients_api_url: str = "https://sdp-dashboard-back-production.up.railway.app"
+    ingredients_box_set: str = "Odyssée"
+
     # Email
     resend_api_key: str = ""
     resend_from: str = "onboarding@resend.dev"

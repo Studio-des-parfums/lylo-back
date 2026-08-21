@@ -1,7 +1,7 @@
 """Service de génération de formules de parfum.
 
 Architecture :
-  1. Récupère les ingrédients depuis la BDD (filtrés par langue/catégorie)
+  1. Récupère les ingrédients depuis l'API dashboard (filtrés par box_set/langue)
   2. Envoie au LLM les réponses + ingrédients disponibles
   3. Le LLM sélectionne les notes, déduit le profil et le type de formule
   4. Calcul des ml selon le tableau des formules (inchangé)
@@ -10,11 +10,10 @@ Architecture :
 import json
 from decimal import Decimal, ROUND_DOWN
 
+import httpx
 from openai import AsyncOpenAI
 
 from app.config import get_settings
-from app.database.connection import AsyncSessionLocal
-from app.database import crud
 from app.services import moodboard_service, session_store
 
 # ── Configuration des types de formules ──────────────────────────────
@@ -45,45 +44,102 @@ _FORMULA_TYPE_CONFIGS: dict[str, dict] = {
     },
 }
 
-BOOSTERS = [
-    {
-        "name": "Floral",
-        "keywords": ["fleur", "rose", "jasmin", "muguet", "floral", "flower",
-                     "pétale", "bouquet", "pivoine", "iris", "ylang",
-                     "néroli", "magnolia", "tubéreuse", "gardénia"],
-    },
-    {
-        "name": "Ambre doux",
-        "keywords": ["ambre", "vanille", "oriental", "chaud", "doux", "warm",
-                     "amber", "gourmand", "caramel", "miel", "tonka",
-                     "baume", "résine", "encens", "oud", "boisé"],
-    },
-    {
-        "name": "Musc blanc sec",
-        "keywords": ["musc", "propre", "frais", "clean", "musk", "coton",
-                     "savon", "linge", "poudré", "aldéhyde", "blanc",
-                     "minéral", "ozonic", "aquatique", "agrume",
-                     "bergamote", "citron", "pamplemousse"],
-    },
-]
+# Mots-clés utilisés pour choisir le booster le plus cohérent avec la formule.
+# L'API dashboard ne fournit ni description ni mots-clés pour les ingrédients de
+# type "booster" : ce mapping (par nom de booster) comble ce manque côté code.
+# Fallback si un booster renvoyé par l'API n'a pas d'entrée ici : liste de mots-clés vide (score 0).
+_BOOSTER_KEYWORDS: dict[str, list[str]] = {
+    "Musc Blanc": ["musc", "propre", "frais", "clean", "musk", "coton",
+                   "savon", "linge", "poudré", "aldéhyde", "blanc",
+                   "minéral", "ozonic", "aquatique", "agrume",
+                   "bergamote", "citron", "pamplemousse"],
+    "Musc Floral": ["fleur", "rose", "jasmin", "muguet", "floral", "flower",
+                    "pétale", "bouquet", "pivoine", "iris", "ylang",
+                    "néroli", "magnolia", "tubéreuse", "gardénia"],
+    "Accord Musc": ["ambre", "vanille", "oriental", "chaud", "doux", "warm",
+                    "amber", "gourmand", "caramel", "miel", "tonka",
+                    "baume", "résine", "encens", "oud", "boisé", "musc profond",
+                    "sensuel"],
+}
 
 
-# ── Chargement des ingrédients depuis la BDD ──────────────────────────
+# ── Chargement des ingrédients depuis l'API dashboard ──────────────────
 
 async def _load_ingredients_from_db(language: str, category: str | None = None) -> list[dict]:
-    async with AsyncSessionLocal() as db:
-        ingredients = await crud.get_all_ingredients(db, language=language, category=category, active_only=True)
-    return [
-        {
-            "id": i.id,
-            "name": i.name,
-            "type": i.type,
-            "description": i.description or "",
-            "intensity": i.intensity or "",
-            "allergens": i.allergens,
-        }
-        for i in ingredients
-    ]
+    """Récupère les ingrédients depuis l'API externe du dashboard SDP.
+
+    Note : le paramètre `category` n'existe pas côté API dashboard (qui filtre
+    par `box_set`) ; il est conservé pour compatibilité de signature mais ignoré.
+    """
+    settings = get_settings()
+    params = {
+        "box_set": settings.ingredients_box_set,
+        "active_only": "true",
+        "language": language,
+    }
+    async with httpx.AsyncClient(timeout=0.01) as client:
+        response = await client.get(f"{settings.ingredients_api_url}/api/ingredients", params=params)
+        response.raise_for_status()
+        raw_ingredients = response.json()
+
+    ingredients = []
+    for i in raw_ingredients:
+        translations = i.get("translations") or {}
+        name = translations.get(language) or translations.get("fr") or translations.get("en") or ""
+        if not name:
+            continue
+        ingredients.append({
+            "id": i.get("id"),
+            "name": name,
+            "type": i.get("type"),
+            "description": i.get("description") or "",
+            "intensity": i.get("intensity") or "",
+            "allergens": i.get("allergens"),
+        })
+    return ingredients
+
+
+async def _load_boosters_from_db(language: str) -> list[dict]:
+    """Récupère les ingrédients de type "booster" depuis l'API dashboard.
+
+    Les boosters ne sont pas rattachés à un box_set : on ne filtre donc pas par
+    `box_set` (contrairement à `_load_ingredients_from_db`), sous peine de ne
+    jamais en recevoir.
+    """
+    settings = get_settings()
+    params = {
+        "type": "booster",
+        "active_only": "true",
+        "language": language,
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(f"{settings.ingredients_api_url}/api/ingredients", params=params)
+        response.raise_for_status()
+        raw_boosters = response.json()
+
+    boosters = []
+    for b in raw_boosters:
+        if b.get("type") != "booster":
+            continue
+        translations = b.get("translations") or {}
+        name = translations.get(language) or translations.get("fr") or translations.get("en") or ""
+        if not name:
+            continue
+        boosters.append({"id": b.get("id"), "name": name})
+    return boosters
+
+
+# Fallback ultime : si l'API ne renvoie aucun booster actif, on ne doit
+# jamais laisser une formule sans booster.
+_FALLBACK_BOOSTER = {"id": None, "name": "Musc Blanc"}
+
+
+async def _load_boosters_with_fallback(language: str) -> list[dict]:
+    try:
+        boosters = await _load_boosters_from_db(language)
+    except (httpx.HTTPError, ValueError):
+        boosters = []
+    return boosters or [_FALLBACK_BOOSTER]
 
 
 # ── Appel LLM ────────────────────────────────────────────────────────
@@ -200,9 +256,17 @@ Sélectionne les notes les plus cohérentes avec les préférences du client et 
 
 # ── Calcul des quantités en ml ────────────────────────────────────────
 
-def _select_booster(note_names: list[str], descriptions: list[str]) -> dict:
+def _select_booster(note_names: list[str], descriptions: list[str], boosters: list[dict]) -> dict:
+    """Choisit le booster le plus cohérent avec les notes de la formule.
+
+    `boosters` doit toujours contenir au moins un élément (garanti par l'appelant) :
+    on retourne systématiquement un booster, même sans aucun mot-clé correspondant.
+    """
     combined = " ".join(note_names + descriptions).lower()
-    scored = [(b, sum(1 for kw in b["keywords"] if kw in combined)) for b in BOOSTERS]
+    scored = [
+        (b, sum(1 for kw in _BOOSTER_KEYWORDS.get(b["name"], []) if kw in combined))
+        for b in boosters
+    ]
     scored.sort(key=lambda x: x[1], reverse=True)
     return scored[0][0]
 
@@ -304,6 +368,7 @@ def _compute_sizes(
 async def _build_formula(
     answers: dict,
     ingredients: list[dict],
+    boosters: list[dict],
     user_allergens: list[str] | None,
     excluded_names: set[str],
     excluded_profiles: set[str],
@@ -326,7 +391,7 @@ async def _build_formula(
     ing_by_name = {i["name"]: i for i in ingredients}
     descriptions = [ing_by_name[n]["description"] for n in all_names if n in ing_by_name]
 
-    booster = _select_booster(all_names, descriptions)
+    booster = _select_booster(all_names, descriptions, boosters)
     sizes = _compute_sizes(top_notes, heart_notes, base_notes, booster, formula_type)
 
     return {
@@ -362,6 +427,7 @@ async def generate_formulas(session_id: str, force_type: str | None = None) -> d
     ingredients = await _load_ingredients_from_db(language)
     if not ingredients:
         return {"error": "Aucun ingrédient disponible en base de données", "formulas": []}
+    boosters = await _load_boosters_with_fallback(language)
 
     formulas = []
     excluded_names: set[str] = set()
@@ -369,12 +435,13 @@ async def generate_formulas(session_id: str, force_type: str | None = None) -> d
 
     for _ in range(2):
         formula = await _build_formula(
-            session_data["answers"], ingredients, user_allergens,
+            session_data["answers"], ingredients, boosters, user_allergens,
             excluded_names, excluded_profiles, language, force_type
         )
         excluded_names |= formula.pop("_selected_names", set())
         excluded_profiles.add(formula["profile"])
-        formula = await moodboard_service.attach_moodboard_safe(formula, language)
+        # TODO: moodboard temporairement désactivé pour accélérer la génération (voir formula_service.py)
+        # formula = await moodboard_service.attach_moodboard_safe(formula, language)
         formulas.append(formula)
 
     session_store.save_generated_formulas(session_id, formulas)
@@ -398,6 +465,7 @@ async def generate_formulas_stateless(
     ingredients = await _load_ingredients_from_db(language)
     if not ingredients:
         return {"error": "Aucun ingrédient disponible en base de données", "formulas": []}
+    boosters = await _load_boosters_with_fallback(language)
 
     formulas = []
     excluded_names: set[str] = set()
@@ -405,12 +473,13 @@ async def generate_formulas_stateless(
 
     for _ in range(2):
         formula = await _build_formula(
-            answers, ingredients, user_allergens,
+            answers, ingredients, boosters, user_allergens,
             excluded_names, excluded_profiles, language, force_type
         )
         excluded_names |= formula.pop("_selected_names", set())
         excluded_profiles.add(formula["profile"])
-        formula = await moodboard_service.attach_moodboard_safe(formula, language)
+        # TODO: moodboard temporairement désactivé pour accélérer la génération (voir formula_service.py)
+        # formula = await moodboard_service.attach_moodboard_safe(formula, language)
         formulas.append(formula)
 
     return {"formulas": formulas}
@@ -453,13 +522,15 @@ async def change_selected_formula_type(session_id: str, formula_type: str) -> di
     ingredients = await _load_ingredients_from_db(language)
     if not ingredients:
         return {"error": "Aucun ingrédient disponible en base de données"}
+    boosters = await _load_boosters_with_fallback(language)
 
     formula = await _build_formula(
-        session_data["answers"], ingredients, user_allergens,
+        session_data["answers"], ingredients, boosters, user_allergens,
         set(), set(), language, force_type=formula_type
     )
     formula.pop("_selected_names", None)
-    formula = await moodboard_service.attach_moodboard_safe(formula, language)
+    # TODO: moodboard temporairement désactivé pour accélérer la génération (voir formula_service.py)
+    # formula = await moodboard_service.attach_moodboard_safe(formula, language)
     session_store.save_selected_formula(session_id, formula)
     return {"formula": formula}
 
@@ -528,9 +599,9 @@ async def replace_note(session_id: str, note_type: str, old_note: str, new_note:
 
     selected[note_key] = notes
 
-    # Recalculer les ml
-    booster_name = selected.get("sizes", {}).get("30ml", {}).get("boosters", [{}])[0].get("name", BOOSTERS[0]["name"])
-    booster = next((b for b in BOOSTERS if b["name"] == booster_name), BOOSTERS[0])
+    # Recalculer les ml (on conserve le booster déjà choisi pour cette formule)
+    booster_name = selected.get("sizes", {}).get("30ml", {}).get("boosters", [{}])[0].get("name", _FALLBACK_BOOSTER["name"])
+    booster = {"name": booster_name}
     selected["sizes"] = _compute_sizes(
         selected.get("top_notes", []),
         selected.get("heart_notes", []),
@@ -540,7 +611,8 @@ async def replace_note(session_id: str, note_type: str, old_note: str, new_note:
     )
     session_meta = session_store.get_session_meta(session_id)
     language = session_meta.get("language", "fr") if session_meta else "fr"
-    selected = await moodboard_service.attach_moodboard_safe(selected, language)
+    # TODO: moodboard temporairement désactivé pour accélérer la génération (voir formula_service.py)
+    # selected = await moodboard_service.attach_moodboard_safe(selected, language)
 
     session_store.save_selected_formula(session_id, selected)
     return {"formula": selected}
