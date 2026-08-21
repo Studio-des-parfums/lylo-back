@@ -77,7 +77,7 @@ async def _load_ingredients_from_db(language: str, category: str | None = None) 
         "active_only": "true",
         "language": language,
     }
-    async with httpx.AsyncClient(timeout=0.01) as client:
+    async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.get(f"{settings.ingredients_api_url}/api/ingredients", params=params)
         response.raise_for_status()
         raw_ingredients = response.json()
