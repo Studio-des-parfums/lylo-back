@@ -48,7 +48,7 @@ async def create_room_with_agent(room_name: str) -> None:
                 await asyncio.sleep(0.5 * attempt)
                 dispatch = await asyncio.wait_for(
                     lkapi.agent_dispatch.create_dispatch(
-                        api.CreateAgentDispatchRequest(agent_name="lylo", room=room_name)
+                        api.CreateAgentDispatchRequest(agent_name=settings.livekit_agent_name, room=room_name)
                     ),
                     timeout=LIVEKIT_DISPATCH_TIMEOUT,
                 )

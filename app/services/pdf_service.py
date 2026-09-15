@@ -8,6 +8,7 @@ from reportlab.lib.units import cm
 from reportlab.platypus import (
     HRFlowable,
     Image,
+    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -64,31 +65,44 @@ NOTE_STYLE = ParagraphStyle(
     leading=16,
 )
 
+NOTE_ML_STYLE = ParagraphStyle(
+    "note_ml",
+    fontName="Helvetica-Bold",
+    fontSize=12,
+    textColor=C_PRIMARY,
+    spaceAfter=6,
+    leading=16,
+    alignment=2,  # TA_RIGHT
+)
 
-def _notes_table(notes: list[str]) -> Table:
-    rows = [[Paragraph(f"— {n}", NOTE_STYLE)] for n in notes]
-    t = Table(rows, colWidths=[14 * cm])
+
+def _notes_table(notes: list) -> Table:
+    # Formules Lylo : {"name": ..., "ml": ...} — dosage affiché à droite.
+    # Catalogue Esther (fallback top_notes/heart_notes/base_notes) : noms simples, sans dosage.
+    rows = []
+    for n in notes:
+        if isinstance(n, dict):
+            label = Paragraph(f"— {n.get('name', '')}", NOTE_STYLE)
+            ml = n.get("ml")
+            ml_cell = Paragraph(f"{ml:g} ml", NOTE_ML_STYLE) if ml is not None else ""
+            rows.append([label, ml_cell])
+        else:
+            rows.append([Paragraph(f"— {n}", NOTE_STYLE), ""])
+    t = Table(rows, colWidths=[11 * cm, 3 * cm])
     t.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 16),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 2),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
         ("LINEBEFORE", (0, 0), (0, -1), 2, C_PRIMARY),
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
     ]))
     return t
 
 
-def generate_formula_pdf(formula: dict) -> bytes:
-    buf = BytesIO()
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=2.5 * cm,
-        rightMargin=2.5 * cm,
-        topMargin=2 * cm,
-        bottomMargin=2 * cm,
-    )
-
+def _build_formula_story(formula: dict) -> list:
+    """Construit le contenu (flowables) d'une formule — factorisé pour être réutilisé tel
+    quel dans un PDF à une seule formule ou concaténé (avec PageBreak) dans un PDF multi-pages."""
     story = []
 
     # Logo
@@ -142,6 +156,42 @@ def generate_formula_pdf(formula: dict) -> bytes:
     # Pied de page décoratif
     story.append(Spacer(1, 1 * cm))
     story.append(HRFlowable(width="100%", thickness=1, color=C_SECONDARY))
+
+    return story
+
+
+def generate_formula_pdf(formula: dict) -> bytes:
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=2.5 * cm,
+        rightMargin=2.5 * cm,
+        topMargin=2 * cm,
+        bottomMargin=2 * cm,
+    )
+    doc.build(_build_formula_story(formula))
+    return buf.getvalue()
+
+
+def generate_multi_formula_pdf(formulas: list[dict]) -> bytes:
+    """PDF multi-pages — une page par formule, dans l'ordre donné. Utilisé pour l'impression
+    groupée (une seule boîte de dialogue d'impression native pour tous les participants)."""
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=2.5 * cm,
+        rightMargin=2.5 * cm,
+        topMargin=2 * cm,
+        bottomMargin=2 * cm,
+    )
+
+    story = []
+    for i, formula in enumerate(formulas):
+        if i > 0:
+            story.append(PageBreak())
+        story.extend(_build_formula_story(formula))
 
     doc.build(story)
     return buf.getvalue()

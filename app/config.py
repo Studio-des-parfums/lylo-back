@@ -10,6 +10,14 @@ class Settings(BaseSettings):
     livekit_url: str
     livekit_api_key: str
     livekit_api_secret: str
+    # Nom du worker agent enregistré/dispatché sur LiveKit Cloud. Le même projet
+    # LiveKit Cloud est partagé entre prod (Railway) et le développement local — si
+    # les deux tournent avec le même nom, LiveKit peut dispatcher une session créée
+    # sur un backend vers l'agent tournant sur l'AUTRE, qui ne connaît pas cette
+    # session (session_store est local à chaque process) → la session ne démarre
+    # jamais. En local, mets LIVEKIT_AGENT_NAME=lylo-dev dans le .env pour isoler
+    # complètement ton environnement de test de la prod.
+    livekit_agent_name: str = "lylo"
 
     # Deepgram
     deepgram_api_key: str

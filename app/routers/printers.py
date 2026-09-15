@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,10 +64,15 @@ class PrintRequest(BaseModel):
     content: str
 
 
+class NoteEntry(BaseModel):
+    name: str
+    ml: float
+
+
 class FormulaNotes(BaseModel):
-    top: list[str] = []
-    heart: list[str] = []
-    base: list[str] = []
+    top: list[NoteEntry] = []
+    heart: list[NoteEntry] = []
+    base: list[NoteEntry] = []
 
 
 class FormulaData(BaseModel):
@@ -351,6 +356,17 @@ async def print_document(body: PrintRequest, db: AsyncSession = Depends(get_db))
     return {"status": "ok", "printer": printer.name}
 
 
+@router.post("/formula-pdf")
+async def formula_pdf(body: FormulaData):
+    """Génère le PDF d'une formule sans l'envoyer à une imprimante réseau — utilisé par
+    le site web (window.print()) et l'app tablette (PrintManager Android) pour laisser
+    l'utilisateur choisir son imprimante au moment de l'impression, plutôt que de dépendre
+    d'une imprimante configurée à l'avance (flux PrintNode/CUPS)."""
+    from app.services.pdf_service import generate_formula_pdf
+    pdf_bytes = generate_formula_pdf(body.model_dump())
+    return Response(content=pdf_bytes, media_type="application/pdf")
+
+
 @router.post("/print-formula")
 async def print_formula(body: PrintFormulaRequest, db: AsyncSession = Depends(get_db)):
     printers = await crud.get_printers_by_location(db, body.location)
@@ -387,6 +403,19 @@ async def print_formula(body: PrintFormulaRequest, db: AsyncSession = Depends(ge
 class PrintMultiFormulaRequest(BaseModel):
     location: str
     formulas: list[FormulaData]
+
+
+class FormulaPdfMultiRequest(BaseModel):
+    formulas: list[FormulaData]
+
+
+@router.post("/formula-pdf-multi")
+async def formula_pdf_multi(body: FormulaPdfMultiRequest):
+    """PDF multi-pages (une page par formule) sans envoi à une imprimante réseau — équivalent
+    de /formula-pdf pour l'impression groupée côté tablette (mode multi-participants)."""
+    from app.services.pdf_service import generate_multi_formula_pdf
+    pdf_bytes = generate_multi_formula_pdf([f.model_dump() for f in body.formulas])
+    return Response(content=pdf_bytes, media_type="application/pdf")
 
 
 @router.post("/print-multi")

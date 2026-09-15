@@ -72,6 +72,7 @@ class BatchGenerateRequest(BaseModel):
     has_allergies: Literal["oui", "non"] = "non"
     allergies: str | None = None
     answers: list[BatchAnswerItem]
+    formula_type: Literal["frais", "mix", "puissant"] | None = None
 
 
 class SendFormulaMailRequest(BaseModel):
@@ -82,6 +83,8 @@ class SendFormulaMailRequest(BaseModel):
 
 class SendFormulaByReferenceRequest(BaseModel):
     email: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
 
 
 class SaveFormulaRequest(BaseModel):
@@ -89,6 +92,14 @@ class SaveFormulaRequest(BaseModel):
     customer_name: str | None = None
     customer_email: str | None = None
     participant_id: int | None = None
+    language: Literal["fr", "en"] = "fr"
+
+
+class ReplaceNoteStatelessRequest(BaseModel):
+    formula: dict
+    note_type: Literal["top", "heart", "base"]
+    old_note: str
+    new_note: str
     language: Literal["fr", "en"] = "fr"
 
 
@@ -100,6 +111,7 @@ class MultiParticipant(BaseModel):
     allergies: str | None = None
     pregnant: bool = False
     answers: list[BatchAnswerItem]
+    formula_type: Literal["frais", "mix", "puissant"] | None = None
 
 
 class MultiGenerateRequest(BaseModel):

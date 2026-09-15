@@ -16,6 +16,7 @@ from app.models.schemas import (
     MultiGenerateRequest,
     SaveMultiFormulaRequest,
     ReplaceNoteRequest,
+    ReplaceNoteStatelessRequest,
     SaveAnswerRequest,
     SaveFormulaRequest,
     SaveProfileRequest,
@@ -75,6 +76,7 @@ async def start_session(body: StartSessionRequest, db: AsyncSession = Depends(ge
             mode=body.mode,
             input_mode=body.input_mode,
             brand=body.brand,
+            email=(body.email or "").strip() or None,
             owner_email=owner_email,
             owner_type=owner_type,
             owner_id=owner_id,
@@ -254,36 +256,6 @@ async def generate_formulas(session_id: str, body: GenerateFormulasRequest = Gen
     return result
 
 
-def _send_formula_mail_bg(session_id: str, formula: dict) -> None:
-    # Mail participant
-    meta = session_store.get_session_meta(session_id)
-    profile = session_store.get_user_profile(session_id) or {}
-    participant_email = (
-        formula.get("customer_email")
-        or profile.get("email")
-        or (meta.get("participant_email") if meta else None)
-    )
-    if participant_email:
-        try:
-            mail_service.send_mail(participant_email, session_id, formula)
-        except Exception as e:
-            print(f"[mail] Erreur envoi mail formule au participant {participant_email} : {e}")
-
-    # Mail interne
-    internal_email = get_settings().internal_email
-    if not internal_email:
-        return
-    for email in [e.strip() for e in internal_email.split(",") if e.strip()]:
-        try:
-            mail_service.send_mail(email, session_id, formula)
-        except Exception as e:
-            print(f"[mail] Erreur envoi mail formule à {email} : {e}")
-        try:
-            mail_service.send_internal_formula_mail(email, session_id, formula)
-        except Exception as e:
-            print(f"[mail] Erreur envoi mail fiche complète à {email} : {e}")
-
-
 def _extract_moodboard_fields(formula: dict) -> dict:
     moodboard = formula.get("moodboard") or {}
     return {
@@ -359,7 +331,9 @@ async def select_formula(
         )
     result["reference"] = db_formula.reference
 
-    background_tasks.add_task(_send_formula_mail_bg, session_id, formula)
+    # Plus d'envoi automatique ici : l'utilisateur déclenche l'envoi explicitement via
+    # le bouton "Recevoir par mail" (POST /formulas/{reference}/send-mail), qui recueille
+    # aussi son nom/prénom à cette occasion plutôt qu'à l'oral ou à la configuration.
     return result
 
 
@@ -400,7 +374,6 @@ async def replace_note(
             sizes=formula.get("sizes"),
             **_extract_moodboard_fields(formula),
         )
-        background_tasks.add_task(_send_formula_mail_bg, session_id, formula)
     return result
 
 
@@ -471,12 +444,17 @@ async def send_formula_mail_by_reference(
             detail="Missing email: provide one or store a customer_email on the formula",
         )
 
+    target_name = " ".join(
+        part for part in [(body.first_name or "").strip(), (body.last_name or "").strip()] if part
+    ) or None
+
+    updates: dict = {}
     if body.email and body.email.strip() != (db_formula.customer_email or "").strip():
-        db_formula = await crud.update_generated_formula_by_reference(
-            db,
-            reference,
-            customer_email=target_email,
-        )
+        updates["customer_email"] = target_email
+    if target_name and target_name != (db_formula.customer_name or ""):
+        updates["customer_name"] = target_name
+    if updates:
+        db_formula = await crud.update_generated_formula_by_reference(db, reference, **updates)
         if not db_formula:
             raise HTTPException(status_code=404, detail="Formula not found")
 
@@ -582,6 +560,19 @@ async def save_formula(body: SaveFormulaRequest, db: AsyncSession = Depends(get_
     return {"reference": db_formula.reference}
 
 
+@router.post("/formulas/replace-note")
+async def replace_note_stateless(body: ReplaceNoteStatelessRequest):
+    """Remplace une note dans une formule sans session serveur active — utilisé par l'écran
+    de personnalisation visuelle (mode quiz), où le client choisit une des 2 alternatives
+    proposées pour une note plutôt que de le dire à l'oral."""
+    result = await formula_service.replace_note_stateless(
+        body.formula, body.note_type, body.old_note, body.new_note, body.language,
+    )
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
 @router.post("/formulas/generate")
 async def batch_generate_formulas(body: BatchGenerateRequest):
     answers = {
@@ -605,6 +596,7 @@ async def batch_generate_formulas(body: BatchGenerateRequest):
             language=body.language,
             has_allergies=body.has_allergies,
             user_allergens_raw=body.allergies or "",
+            force_type=body.formula_type,
         )
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
@@ -637,6 +629,7 @@ async def multi_generate_formulas(body: MultiGenerateRequest):
                 language=body.language,
                 has_allergies=participant.has_allergies,
                 user_allergens_raw=participant.allergies or "",
+                force_type=participant.formula_type,
             )
         if "error" in result:
             raise HTTPException(status_code=400, detail=f"[{participant.color}] {result['error']}")

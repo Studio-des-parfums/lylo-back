@@ -111,6 +111,8 @@ RÈGLES ABSOLUES : Ne jamais écrire la syntaxe des function calls dans ton text
 Si l'utilisateur pose une question sur la parfumerie, réponds-y brièvement et avec expertise, puis reviens immédiatement à ta mission actuelle.
 
 GESTION DES RÉPONSES ABSURDES : Utilise l'humour pour demander la vraie information. Ex: "500 ans ? Quel beau parcours ! Mais pour le parfum, j'ai besoin de votre âge terrestre."
+
+RÈGLE ABSOLUE — NE JAMAIS DÉCIDER À LA PLACE DE L'UTILISATEUR PENDANT LE QUESTIONNAIRE : Si l'utilisateur demande "vous me conseillez quoi ?", "qu'est-ce que vous préférez ?" ou une question similaire PENDANT le questionnaire (avant que toutes les questions n'aient une réponse confirmée), explique-lui avec douceur que c'est une expérience personnalisée et que tu as besoin de SA propre préférence pour créer une formule qui lui correspond — puis repose la question en cours. Ne saute JAMAIS directement à la génération de formule tant que le questionnaire n'est pas terminé, même si l'utilisateur insiste ou semble indécis.
 """
 
 PERSONALITY_EN = """Your name is {ai_name}. You work for Le Studio des Parfums.
@@ -122,6 +124,8 @@ ABSOLUTE RULES: Never write function call syntax in your text. Functions must be
 If the user asks a perfumery question, answer briefly and expertly, then return immediately to your current mission.
 
 ABSURD ANSWER HANDLING: Use humor to get the real information. Ex: "500 years old? What a journey! But for the perfume, I need your earthly age."
+
+ABSOLUTE RULE — NEVER DECIDE ON THE USER'S BEHALF DURING THE QUESTIONNAIRE: If the user asks "what do you recommend?", "what would you pick?" or something similar WHILE the questionnaire is still in progress (before every question has a confirmed answer), gently explain that this is a personalized experience and you need THEIR own preference to build a formula tailored to them — then ask the current question again. NEVER jump straight to generating a formula while the questionnaire is unfinished, even if the user insists or seems undecided.
 """
 
 
@@ -491,21 +495,52 @@ async def entrypoint(ctx: JobContext):
     session_id = ctx.room.name.replace("room_", "")
     logger.info(f"[SESSION_ID] session_id={session_id}")
 
-    http = httpx.AsyncClient(base_url=settings.backend_url, timeout=30.0)
+    # Hooks de timing — mesurent la durée de CHAQUE appel HTTP fait vers le backend
+    # (tool calls du LLM inclus) sans avoir à instrumenter chaque fonction séparément.
+    # Utile pour diagnostiquer un délai de réponse inhabituel (ex: 2-3s perçus par
+    # l'utilisateur) : on peut voir précisément si le temps part dans cet appel réseau
+    # ou ailleurs (LLM, TTS, connexion utilisateur↔LiveKit).
+    # Les event hooks d'un client httpx ASYNC doivent être des coroutines — une
+    # fonction sync ici ferait `await None` et casserait silencieusement CHAQUE
+    # requête (httpx attend le retour du hook).
+    async def _log_request_start(request: httpx.Request):
+        request.extensions["start_time"] = _boot_time.monotonic()
+
+    async def _log_response_end(response: httpx.Response):
+        start = response.request.extensions.get("start_time")
+        elapsed_ms = (_boot_time.monotonic() - start) * 1000 if start else -1
+        # `at=` en time.time() (horloge murale) pour rester comparable aux autres logs
+        # du fichier ([AGENT_STATE], [GREETING], ...) qui utilisent tous _time.time().
+        logger.info(
+            f"[HTTP_TIMING] {response.request.method} {response.request.url.path} "
+            f"→ {response.status_code} en {elapsed_ms:.0f}ms (at {_boot_time.time():.3f})"
+        )
+
+    http = httpx.AsyncClient(
+        base_url=settings.backend_url,
+        timeout=30.0,
+        event_hooks={"request": [_log_request_start], "response": [_log_response_end]},
+    )
     logger.info(f"[HTTP] Récupération session depuis {settings.backend_url}/api/session/{session_id}")
 
-    for attempt in range(5):
+    # Backoff court et progressif plutôt qu'une attente fixe de 1s : la session est
+    # généralement déjà prête côté backend en quelques centaines de ms (le frontend la
+    # crée juste avant de faire rejoindre l'agent à la room) — un sleep(1.0) fixe fait
+    # perdre jusqu'à ~850ms de latence de démarrage dans le cas normal. Le total cumulé
+    # (~5.9s) reste proche de l'ancien (5s) pour ne pas perdre en robustesse sur les cas lents.
+    retry_delays = [0.2, 0.4, 0.8, 1.5, 3.0]
+    for attempt, delay in enumerate(retry_delays):
         try:
             resp = await http.get(f"/api/session/{session_id}")
-            logger.info(f"[HTTP] Tentative {attempt + 1}/5 — status={resp.status_code}")
+            logger.info(f"[HTTP] Tentative {attempt + 1}/{len(retry_delays)} — status={resp.status_code}")
             if resp.status_code == 200:
                 break
-            logger.warning(f"[HTTP] Session {session_id} pas encore prête (attempt {attempt + 1}/5)")
+            logger.warning(f"[HTTP] Session {session_id} pas encore prête (attempt {attempt + 1}/{len(retry_delays)})")
         except Exception as e:
-            logger.error(f"[HTTP] Tentative {attempt + 1}/5 — Erreur réseau: {e}")
-        await asyncio.sleep(1.0)
+            logger.error(f"[HTTP] Tentative {attempt + 1}/{len(retry_delays)} — Erreur réseau: {e}")
+        await asyncio.sleep(delay)
     else:
-        logger.error(f"[HTTP] ❌ Session {session_id} introuvable après 5 tentatives — agent abandonne.")
+        logger.error(f"[HTTP] ❌ Session {session_id} introuvable après {len(retry_delays)} tentatives — agent abandonne.")
         await http.aclose()
         return
 
@@ -800,9 +835,44 @@ async def entrypoint(ctx: JobContext):
         else:
             return await advance_to(AgentPhase.INTENSITY)
 
+    def _questionnaire_incomplete_error() -> str | None:
+        """Garde-fou anti-hallucination : le LLM peut être tenté d'appeler generate_formulas
+        prématurément si l'utilisateur dit quelque chose comme "vous me conseillez quoi ?" en
+        plein questionnaire. Le prompt seul ne suffit pas à empêcher ça de façon fiable — ce
+        contrôle est fait ici, en dur, en plus des instructions du prompt. Retourne un message
+        d'erreur si le questionnaire n'est pas terminé, sinon None."""
+        num_questions = len(config.get("questions", []))
+        if state.answers_saved < num_questions:
+            logger.warning(
+                f"[GUARD] generate_formulas/generate_catalog_matches appelé prématurément "
+                f"— answers_saved={state.answers_saved}/{num_questions} phase={state.phase.name}"
+            )
+            if is_en:
+                return (
+                    "Error: the questionnaire is not finished yet "
+                    f"({state.answers_saved}/{num_questions} questions answered). "
+                    "This is a personal choice for the user to make — you cannot decide or "
+                    "recommend an answer on their behalf. Do NOT call generate_formulas. "
+                    "Instead, gently explain that you need their own preference to build a "
+                    "formula tailored to them, then continue the questionnaire from where it "
+                    "was left off."
+                )
+            return (
+                "Erreur : le questionnaire n'est pas terminé "
+                f"({state.answers_saved}/{num_questions} questions répondues). "
+                "C'est un choix personnel à l'utilisateur — vous ne pouvez pas décider ou "
+                "recommander une réponse à sa place. N'appelez PAS generate_formulas. "
+                "Expliquez-lui avec douceur que vous avez besoin de sa propre préférence pour "
+                "créer une formule qui lui correspond, puis reprenez le questionnaire là où "
+                "il en était."
+            )
+        return None
+
     @function_tool()
     async def generate_formulas(formula_type: str):
         """Generates 2 personalized perfume formulas. formula_type: 'frais', 'mix', or 'puissant'. / Génère 2 formules de parfum personnalisées. formula_type : 'frais', 'mix' ou 'puissant'."""
+        if error := _questionnaire_incomplete_error():
+            return error
         state.formula_type = formula_type
         logger.info(f"[FORMULAS] generate_formulas type={formula_type}")
         await send_state_update({"type": "state_change", "state": "generating_formulas"})
@@ -825,6 +895,8 @@ async def entrypoint(ctx: JobContext):
     @function_tool()
     async def generate_catalog_matches():
         """Selects 2-3 real perfumes from the catalog matching the user's preferences. / Sélectionne 2-3 parfums réels du catalogue correspondant aux préférences de l'utilisateur."""
+        if error := _questionnaire_incomplete_error():
+            return error
         logger.info("[CATALOG] generate_catalog_matches")
         await send_state_update({"type": "state_change", "state": "generating_formulas"})
         resp = await http.post(f"/api/session/{session_id}/generate-formulas", json={})
@@ -858,6 +930,7 @@ async def entrypoint(ctx: JobContext):
             "state": "customization",
             "formula_index": formula_index,
             "formula": data["formula"],
+            "reference": data.get("reference"),
         })
         return await advance_to(AgentPhase.CUSTOMIZATION)
 
@@ -991,7 +1064,18 @@ async def entrypoint(ctx: JobContext):
             language=config.get("language", "fr"),
         ),
         vad=ctx.proc.userdata["vad"],
-        allow_interruptions=False,
+        # Endpointing dynamique : au lieu d'un délai fixe unique pour tout le monde,
+        # le SDK apprend en direct le rythme de pause propre à chaque utilisateur
+        # (moyenne mobile exponentielle sur ses pauses naturelles) et ajuste le délai
+        # d'attente en conséquence — quelqu'un qui hésite garde un délai plus long
+        # appris automatiquement, quelqu'un qui parle sans pause obtient une réponse
+        # plus rapide. max_delay reste un plafond de sécurité fixe, jamais dépassé.
+        # Remplace l'ancien `allow_interruptions=False` (déprécié) — `interruption:
+        # {"enabled": False}` reproduit exactement le même comportement.
+        turn_handling={
+            "endpointing": {"mode": "dynamic", "min_delay": 0.5, "max_delay": 3.0},
+            "interruption": {"enabled": False},
+        },
     )
     logger.info("[AGENT_SESSION] ✅ AgentSession créée")
 
@@ -1061,10 +1145,56 @@ async def entrypoint(ctx: JobContext):
 
     @session.on("agent_state_changed")
     def on_agent_state_changed(ev):
+        # Sert à mesurer le délai perçu par l'utilisateur : le temps passé en
+        # "thinking" (entre la fin de la question de l'utilisateur et le début de la
+        # réponse parlée) couvre le LLM + les éventuels tool calls réseau vers le
+        # backend — à comparer aux logs [HTTP_TIMING] pour savoir où part le temps.
+        logger.info(f"[AGENT_STATE] {ev.old_state} → {ev.new_state} at {ev.created_at:.3f}")
         asyncio.ensure_future(send_state_update({
             "type": "agent_state",
             "state": ev.new_state,
         }))
+
+    # ─── Coupure automatique en cas d'inactivité prolongée ─────────────────
+    # Objectif : éviter de gaspiller le quota Beyond Presence (avatar vidéo),
+    # Cartesia et Deepgram si l'utilisateur laisse la session ouverte sans plus
+    # interagir (parti sans se déconnecter, onglet oublié en arrière-plan, etc.).
+    # `user_state_changed` passe à "away" après 15s de silence complet (utilisateur
+    # ET agent) — c'est le comportement par défaut du SDK (user_away_timeout=15.0,
+    # déjà actif, on ne fait qu'en écouter l'événement). On laisse ensuite un délai
+    # supplémentaire avant de couper pour de bon, au cas où l'utilisateur réfléchit
+    # simplement longtemps à sa réponse.
+    _AWAY_GRACE_PERIOD_SECONDS = 45.0  # + 15s de détection SDK = ~60s au total
+    inactivity_shutdown_task: list[asyncio.Task | None] = [None]
+
+    async def _shutdown_after_inactivity():
+        try:
+            await asyncio.sleep(_AWAY_GRACE_PERIOD_SECONDS)
+            logger.warning(f"[INACTIVITY] Session inactive depuis ~{15 + _AWAY_GRACE_PERIOD_SECONDS:.0f}s — fermeture pour room={ctx.room.name}")
+            farewell = (
+                "It looks like you've stepped away — I'll close our session for now. Feel free to start a new one anytime!"
+                if is_en else
+                "On dirait que vous vous êtes absenté(e) — je vais clore notre session. N'hésitez pas à en démarrer une nouvelle quand vous voulez !"
+            )
+            try:
+                await session.generate_reply(instructions=f"Say EXACTLY this and nothing else: \"{farewell}\"")
+            except Exception as e:
+                logger.warning(f"[INACTIVITY] Erreur lors du message d'au revoir: {e}")
+            ctx.shutdown(reason="user inactivity timeout")
+        except asyncio.CancelledError:
+            pass
+
+    @session.on("user_state_changed")
+    def on_user_state_changed(ev):
+        logger.info(f"[USER_STATE] {ev.old_state} → {ev.new_state} at {ev.created_at:.3f}")
+        if ev.new_state == "away":
+            if inactivity_shutdown_task[0] is None or inactivity_shutdown_task[0].done():
+                inactivity_shutdown_task[0] = asyncio.ensure_future(_shutdown_after_inactivity())
+        else:
+            # L'utilisateur (ou l'agent) est redevenu actif — annule la coupure programmée.
+            if inactivity_shutdown_task[0] is not None and not inactivity_shutdown_task[0].done():
+                inactivity_shutdown_task[0].cancel()
+                logger.info("[INACTIVITY] Activité détectée — coupure programmée annulée")
 
     def _on_data_received(data_packet):
         try:
@@ -1136,9 +1266,17 @@ async def entrypoint(ctx: JobContext):
 def prewarm(proc: JobProcess):
     logger.info(f"[PREWARM] Démarrage prewarm — PID={os.getpid()}")
     try:
+        # min_silence_duration=1.5 (avant) forçait TOUJOURS 1.5s de silence avant même
+        # de considérer le tour terminé, quel que soit le rythme de l'utilisateur — la
+        # principale source du délai de 2-3s observé en usage réel (voir PERF_TODO.md).
+        # 0.6s se rapproche du défaut recommandé par le plugin Silero (0.55s, cf. doc
+        # livekit.plugins.silero.vad) : le VAD n'a plus besoin de porter seul la
+        # protection contre les hésitations — c'est le rôle de l'endpointing dynamique
+        # configuré sur l'AgentSession (turn_handling), qui apprend le rythme de pause
+        # propre à chaque utilisateur et garde max_delay comme filet de sécurité.
         proc.userdata["vad"] = silero.VAD.load(
             min_speech_duration=0.3,
-            min_silence_duration=1.5,
+            min_silence_duration=0.6,
         )
         logger.info("[PREWARM] ✅ Silero VAD chargé")
     except Exception as e:
@@ -1151,7 +1289,10 @@ if __name__ == "__main__":
         WorkerOptions(
             entrypoint_fnc=entrypoint,
             prewarm_fnc=prewarm,
-            agent_name="lylo",
+            # Configurable via LIVEKIT_AGENT_NAME (.env) — mettre "lylo-dev" en local
+            # pour éviter que LiveKit Cloud (partagé avec la prod) ne dispatche une
+            # session locale vers l'agent Railway ou inversement (voir config.py).
+            agent_name=settings.livekit_agent_name,
             num_idle_processes=3,
             load_threshold=0.9,
         )

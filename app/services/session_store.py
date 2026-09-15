@@ -24,6 +24,7 @@ def save_session_meta(
     mode: str = "guided",
     input_mode: str = "voice",
     brand: str = "lylo",
+    email: str | None = None,
     owner_email: str | None = None,
     owner_type: str | None = None,
     owner_id: int | None = None,
@@ -41,6 +42,10 @@ def save_session_meta(
         "avatar": avatar,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
+    # Email du client à qui envoyer sa formule (saisi à l'écran de configuration) — distinct
+    # de owner_email (compte/équipe propriétaire des crédits de session).
+    if email:
+        mapping["email"] = email
     if owner_email:
         mapping["owner_email"] = owner_email
     if owner_type:
