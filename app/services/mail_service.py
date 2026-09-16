@@ -43,9 +43,13 @@ def _send_mail(to_email: str, subject: str, html: str) -> None:
                 "html": html,
             }
         )
-    except Exception:
+    except Exception as exc:
         duration_ms = round((time.perf_counter() - start) * 1000)
-        logger.exception("[mail] Resend send failed after %sms %s", duration_ms, context)
+        detail = getattr(exc, "message", None) or str(exc)
+        logger.exception(
+            "[mail] Resend send failed after %sms %s detail=%s",
+            duration_ms, context, detail,
+        )
         raise
     duration_ms = round((time.perf_counter() - start) * 1000)
     logger.info("[mail] Resend send success after %sms %s", duration_ms, context)

@@ -561,7 +561,9 @@ async def save_formula(body: SaveFormulaRequest, db: AsyncSession = Depends(get_
 
 
 @router.post("/formulas/replace-note")
-async def replace_note_stateless(body: ReplaceNoteStatelessRequest):
+async def replace_note_stateless(
+    body: ReplaceNoteStatelessRequest, db: AsyncSession = Depends(get_db)
+):
     """Remplace une note dans une formule sans session serveur active — utilisé par l'écran
     de personnalisation visuelle (mode quiz), où le client choisit une des 2 alternatives
     proposées pour une note plutôt que de le dire à l'oral."""
@@ -570,6 +572,18 @@ async def replace_note_stateless(body: ReplaceNoteStatelessRequest):
     )
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
+
+    if body.reference:
+        updated = result["formula"]
+        await crud.update_generated_formula_by_reference(
+            db,
+            body.reference,
+            top_notes=updated.get("top_notes"),
+            heart_notes=updated.get("heart_notes"),
+            base_notes=updated.get("base_notes"),
+            sizes=updated.get("sizes"),
+        )
+
     return result
 
 

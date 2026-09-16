@@ -101,6 +101,10 @@ class ReplaceNoteStatelessRequest(BaseModel):
     old_note: str
     new_note: str
     language: Literal["fr", "en"] = "fr"
+    # Référence déjà sauvegardée en base pour cette formule (si l'utilisateur a déjà
+    # choisi une carte) — permet de répercuter la note modifiée sur l'enregistrement
+    # existant plutôt que de le laisser périmé.
+    reference: str | None = None
 
 
 class MultiParticipant(BaseModel):
