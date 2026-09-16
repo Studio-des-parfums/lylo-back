@@ -1,6 +1,7 @@
 from datetime import date as date_type, datetime
 
 from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlalchemy.orm import selectinload
@@ -211,26 +212,35 @@ async def delete_printer(db: AsyncSession, printer_id: int) -> bool:
 
 # --- GeneratedFormula CRUD ---
 
-async def _generate_reference(db: AsyncSession, brand: str = "lylo") -> str:
+async def _generate_reference(db: AsyncSession) -> str:
     today = datetime.now()
-    date_str = today.strftime("%d%m%Y")
-    prefix = f"{brand}-{date_str}-"
+    date_str = today.strftime("%Y-%m-%d")
+    prefix = f"{date_str}-"
     result = await db.execute(
         select(func.count(GeneratedFormula.id)).where(
             GeneratedFormula.reference.like(f"{prefix}%")
         )
     )
     count = result.scalar() or 0
-    return f"{prefix}{(count + 1):03d}"
+    return f"{prefix}{count + 1}"
 
 
-async def create_generated_formula(db: AsyncSession, **kwargs) -> GeneratedFormula:
-    reference = await _generate_reference(db, brand=kwargs.get("brand") or "lylo")
-    formula = GeneratedFormula(reference=reference, **kwargs)
-    db.add(formula)
-    await db.commit()
-    await db.refresh(formula)
-    return formula
+async def create_generated_formula(
+    db: AsyncSession, max_retries: int = 5, **kwargs
+) -> GeneratedFormula:
+    for attempt in range(max_retries):
+        reference = await _generate_reference(db)
+        formula = GeneratedFormula(reference=reference, **kwargs)
+        db.add(formula)
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            if attempt == max_retries - 1:
+                raise
+            continue
+        await db.refresh(formula)
+        return formula
 
 
 async def get_formula_moodboard_by_notes_key(
