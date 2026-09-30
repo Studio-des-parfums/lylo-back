@@ -197,7 +197,9 @@ def get_prompt(state: SessionState, config: dict, ai_name: str, is_en: bool, inp
 Question (id={q['id']}): "{q['question']}"
 Available choices: {choices_str}
 
-STEP: Ask {first_name} for their 2 FAVORITE choices in ONE natural sentence. Do NOT enumerate the choices aloud — the user can see them on screen. The user may answer by speaking OR by clicking the cards on screen — if they click, you will be notified automatically and should NOT call notify_top_2 yourself in that case.
+FIRST action (before speaking): call notify_asking_top_2(question_id={q['id']}) to signal the interface that the cards are now clickable.
+
+STEP: Then, in ONE natural sentence, ask {first_name} for their 2 FAVORITE choices. Do NOT enumerate the choices aloud — the user can see them on screen. The user may answer by speaking OR by clicking the cards on screen — if they click, you will be notified automatically and should NOT call notify_top_2 yourself in that case.
 
 Once the user gives 2 choices ORALLY (if they click instead, skip this — you'll be notified):
 1. Match each spoken answer to the closest canonical label from: [{choices_str}]. Use semantic and phonetic understanding — the user may mispronounce, abbreviate, or give a partial answer (e.g. "delhi" → "Delhi", "jazz" → "Jazz et new age", "rock" → "Rock"). NEVER ask for clarification for ambiguous answers — pick the closest match and move on silently.
@@ -209,7 +211,9 @@ Once the user gives 2 choices ORALLY (if they click instead, skip this — you'l
 Question (id={q['id']}) : "{q['question']}"
 Choix disponibles : {choices_str}
 
-ÉTAPE : Demandez à {first_name} ses 2 choix PRÉFÉRÉS en UNE seule phrase naturelle. Ne lisez JAMAIS les choix à voix haute — l'utilisateur les voit à l'écran. L'utilisateur peut répondre À L'ORAL ou en CLIQUANT sur les cartes à l'écran — s'il clique, vous serez notifié automatiquement et ne devez PAS appeler notify_top_2 vous-même dans ce cas.
+PREMIÈRE action (avant de parler) : appelez notify_asking_top_2(question_id={q['id']}) pour signaler à l'interface que les cartes sont maintenant cliquables.
+
+ÉTAPE : Puis, en UNE seule phrase naturelle, demandez à {first_name} ses 2 choix PRÉFÉRÉS. Ne lisez JAMAIS les choix à voix haute — l'utilisateur les voit à l'écran. L'utilisateur peut répondre À L'ORAL ou en CLIQUANT sur les cartes à l'écran — s'il clique, vous serez notifié automatiquement et ne devez PAS appeler notify_top_2 vous-même dans ce cas.
 
 Une fois que l'utilisateur donne 2 choix À L'ORAL (s'il clique à la place, ignorez cette étape — vous serez notifié) :
 1. Faites correspondre chaque réponse vocale au label canonique le plus proche parmi : [{choices_str}]. Utilisez votre compréhension sémantique et phonétique — l'utilisateur peut mal prononcer, abréger ou donner une réponse partielle (ex: "délit" → "Delhi", "jazz" → "Jazz et new age", "gastro" → "Gastronomique"). INTERDIT ABSOLU : ne jamais signaler, corriger ou commenter — choisissez le label le plus proche et continuez directement.
@@ -310,10 +314,11 @@ Une fois que l'utilisateur donne 2 choix À L'ORAL (s'il clique à la place, ign
 
     elif phase == AgentPhase.PERFUME_NAME:
         first_name = state.profile.get("first_name", "")
+        ready_word = "prête" if state.profile.get("gender", "").lower() in ("féminin", "feminin", "female", "f") else "prêt"
         if is_en:
             mission = f"""A text field has just appeared on screen for {first_name} to type in. In ONE short reply, say something like: "And to finish — give your perfume a name! Type it on the screen when you're ready." Then WAIT — do not call any function. The user is typing, not speaking; do not expect a spoken answer. You will be notified automatically once they've validated their input."""
         else:
-            mission = f"""Un champ de texte vient d'apparaître à l'écran pour que {first_name} puisse écrire. En UNE SEULE réplique courte, dites quelque chose comme : "Et pour finir, donnez un nom à votre parfum ! Écrivez-le à l'écran quand vous êtes prêt(e)." Puis ATTENDEZ — n'appelez aucune fonction. L'utilisateur tape, il ne parle pas ; n'attendez pas de réponse orale. Vous serez notifié automatiquement une fois sa saisie validée."""
+            mission = f"""Un champ de texte vient d'apparaître à l'écran pour que {first_name} puisse écrire. En UNE SEULE réplique courte, dites quelque chose comme : "Et pour finir, donnez un nom à votre parfum ! Écrivez-le à l'écran quand vous êtes {ready_word}." (accordez "{ready_word}" — c'est déjà le bon accord selon le genre de l'utilisateur, ne mettez PAS de parenthèse du type "prêt(e)"). Puis ATTENDEZ — n'appelez aucune fonction. L'utilisateur tape, il ne parle pas ; n'attendez pas de réponse orale. Vous serez notifié automatiquement une fois sa saisie validée."""
 
     elif phase == AgentPhase.PRESENT_FORMULAS:
         first_name = state.profile.get("first_name", "")
@@ -331,21 +336,13 @@ Then ask which one they prefer. Once the user clearly chooses one, call IMMEDIAT
 
 Demandez ensuite lequel l'utilisateur préfère. Dès qu'il/elle choisit clairement, appelez IMMÉDIATEMENT select_formula(formula_index=N) correspondant à son choix (0 pour le premier, 1 pour le deuxième, 2 pour le troisième s'il y en a un)."""
         elif is_en:
-            mission = f"""Present the 2 generated perfume formulas to {first_name} with enthusiasm. For each formula:
-1. The profile name (e.g. "Your first formula is called The Influencer!")
-2. A short description of the profile in your own words
-3. An atmospheric description of the overall scent (mood, occasion, feeling) — do NOT enumerate notes one by one
-4. Mention it's available in 3 sizes: 10ml, 30ml, 50ml
+            mission = f"""Present the 2 generated perfume formulas to {first_name} with enthusiasm, but STAY CONCISE — this is spoken aloud, not read. Do NOT introduce with a general sentence about both formulas together — go straight into presenting formula 1, then formula 2. For EACH formula, in ONE short sentence: its name + a brief atmospheric feel (mood/occasion) in your own words. Do NOT describe the profile separately, do NOT enumerate notes, do NOT mention bottle sizes (10ml/30ml/50ml) — the sizes are shown on screen, never say them aloud.
 
 Then ask which formula they prefer. Once the user clearly chooses one, call IMMEDIATELY select_formula(formula_index=0) for the first or select_formula(formula_index=1) for the second.
 
 If the user wants to change intensity before choosing: call generate_formulas(formula_type=new_type) again, present the 2 new formulas, then wait for selection."""
         else:
-            mission = f"""Présentez les 2 formules de parfum générées à {first_name} avec enthousiasme. Pour chaque formule :
-1. Le nom du profil (ex : "Votre première formule s'appelle The Influencer !")
-2. Une courte description du profil en vos propres mots
-3. Une description atmosphérique globale du parfum (humeur, occasion, sensation) — ne listez PAS les notes une par une
-4. Mentionnez qu'elle est disponible en 3 formats : 10ml, 30ml et 50ml
+            mission = f"""Présentez les 2 formules de parfum générées à {first_name} avec enthousiasme, mais RESTEZ CONCIS(E) — c'est de l'oral, pas de la lecture. N'introduisez PAS par une phrase générale sur les deux formules ensemble — allez directement à la présentation de la formule 1, puis de la formule 2. Pour CHAQUE formule, en UNE SEULE phrase courte : son nom + une brève ambiance (humeur/occasion) en vos propres mots. Ne décrivez PAS le profil séparément, ne listez PAS les notes, ne mentionnez JAMAIS les formats de flacon (10ml/30ml/50ml) — les tailles sont affichées à l'écran, ne les dites jamais à l'oral.
 
 Demandez ensuite laquelle l'utilisateur préfère. Dès qu'il/elle choisit clairement, appelez IMMÉDIATEMENT select_formula(formula_index=0) pour la première ou select_formula(formula_index=1) pour la deuxième.
 
@@ -1146,18 +1143,6 @@ async def entrypoint(ctx: JobContext):
 
     # ─── Event listeners ──────────────────────────────────────────────────
 
-    @session.on("agent_state_changed")
-    def on_agent_state_changed(ev):
-        # Sert à mesurer le délai perçu par l'utilisateur : le temps passé en
-        # "thinking" (entre la fin de la question de l'utilisateur et le début de la
-        # réponse parlée) couvre le LLM + les éventuels tool calls réseau vers le
-        # backend — à comparer aux logs [HTTP_TIMING] pour savoir où part le temps.
-        logger.info(f"[AGENT_STATE] {ev.old_state} → {ev.new_state} at {ev.created_at:.3f}")
-        asyncio.ensure_future(send_state_update({
-            "type": "agent_state",
-            "state": ev.new_state,
-        }))
-
     # ─── Coupure automatique en cas d'inactivité prolongée ─────────────────
     # Objectif : éviter de gaspiller le quota Beyond Presence (avatar vidéo),
     # Cartesia et Deepgram si l'utilisateur laisse la session ouverte sans plus
@@ -1167,8 +1152,20 @@ async def entrypoint(ctx: JobContext):
     # déjà actif, on ne fait qu'en écouter l'événement). On laisse ensuite un délai
     # supplémentaire avant de couper pour de bon, au cas où l'utilisateur réfléchit
     # simplement longtemps à sa réponse.
+    #
+    # Le SDK ne base "away" que sur le silence micro de l'utilisateur — il ignore les
+    # interactions silencieuses (saisie du nom du parfum au clavier, clic sur les cartes de
+    # choix) ainsi que l'agent qui continue de parler pendant ce temps (ex: présentation des
+    # formules juste après une saisie clavier). Sans le garde-fou ci-dessous, le timer armé
+    # avant une saisie clavier continuait de courir et coupait la session en plein milieu
+    # d'une réplique de l'agent. On annule donc aussi le timer dès que l'agent se met à parler.
     _AWAY_GRACE_PERIOD_SECONDS = 45.0  # + 15s de détection SDK = ~60s au total
     inactivity_shutdown_task: list[asyncio.Task | None] = [None]
+
+    def _cancel_inactivity_shutdown(reason: str):
+        if inactivity_shutdown_task[0] is not None and not inactivity_shutdown_task[0].done():
+            inactivity_shutdown_task[0].cancel()
+            logger.info(f"[INACTIVITY] {reason} — coupure programmée annulée")
 
     async def _shutdown_after_inactivity():
         try:
@@ -1187,6 +1184,20 @@ async def entrypoint(ctx: JobContext):
         except asyncio.CancelledError:
             pass
 
+    @session.on("agent_state_changed")
+    def on_agent_state_changed(ev):
+        # Sert à mesurer le délai perçu par l'utilisateur : le temps passé en
+        # "thinking" (entre la fin de la question de l'utilisateur et le début de la
+        # réponse parlée) couvre le LLM + les éventuels tool calls réseau vers le
+        # backend — à comparer aux logs [HTTP_TIMING] pour savoir où part le temps.
+        logger.info(f"[AGENT_STATE] {ev.old_state} → {ev.new_state} at {ev.created_at:.3f}")
+        if ev.new_state == "speaking":
+            _cancel_inactivity_shutdown("Agent en train de parler")
+        asyncio.ensure_future(send_state_update({
+            "type": "agent_state",
+            "state": ev.new_state,
+        }))
+
     @session.on("user_state_changed")
     def on_user_state_changed(ev):
         logger.info(f"[USER_STATE] {ev.old_state} → {ev.new_state} at {ev.created_at:.3f}")
@@ -1194,10 +1205,7 @@ async def entrypoint(ctx: JobContext):
             if inactivity_shutdown_task[0] is None or inactivity_shutdown_task[0].done():
                 inactivity_shutdown_task[0] = asyncio.ensure_future(_shutdown_after_inactivity())
         else:
-            # L'utilisateur (ou l'agent) est redevenu actif — annule la coupure programmée.
-            if inactivity_shutdown_task[0] is not None and not inactivity_shutdown_task[0].done():
-                inactivity_shutdown_task[0].cancel()
-                logger.info("[INACTIVITY] Activité détectée — coupure programmée annulée")
+            _cancel_inactivity_shutdown("Activité détectée")
 
     async def _handle_perfume_name_submitted(name: str):
         """Reçoit le nom du parfum saisi au clavier par l'utilisateur (data channel 'control',
@@ -1225,6 +1233,14 @@ async def entrypoint(ctx: JobContext):
             logger.warning(f"[PERFUME_NAME] Échec réplique d'accueil: {e}")
 
         await _generate_formulas_now(state.formula_type or "mix")
+        # _generate_formulas_now (appelé directement, pas via un tool call LLM) fait avancer
+        # la phase vers PRESENT_FORMULAS mais ne parle pas de lui-même — contrairement à un
+        # vrai tool call où le framework relance automatiquement le LLM après le retour du
+        # tool. Il faut donc déclencher explicitement la présentation des formules ici.
+        try:
+            await session.generate_reply()
+        except Exception as e:
+            logger.warning(f"[PERFUME_NAME] Échec relance présentation formules: {e}")
 
     async def _handle_top_2_clicked(question_id: int, values: list[str]):
         """Reçoit les 2 favoris choisis par clic (data channel 'control', voir
