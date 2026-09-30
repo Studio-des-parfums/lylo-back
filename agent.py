@@ -191,20 +191,15 @@ def get_prompt(state: SessionState, config: dict, ai_name: str, is_en: bool, inp
         choices_str = ", ".join(c["label"] if isinstance(c, dict) else c for c in q.get("choices", []))
         first_name = state.profile.get("first_name", "")
 
-        click_hint = ""
-        if input_mode == "click":
-            click_hint = (" Before asking, call request_top_2_click(question_id) to signal the interface to show a 'Reply' button." if is_en
-                          else " Avant de poser la question, appelez request_top_2_click(question_id) pour signaler à l'interface d'afficher le bouton 'Répondre'.")
-
         if is_en:
             mission = f"""It is now question {q_num} of {num_questions}.
 
 Question (id={q['id']}): "{q['question']}"
 Available choices: {choices_str}
 
-STEP: Ask {first_name} for their 2 FAVORITE choices in ONE natural sentence. Do NOT enumerate the choices aloud — the user can see them on screen.{click_hint}
+STEP: Ask {first_name} for their 2 FAVORITE choices in ONE natural sentence. Do NOT enumerate the choices aloud — the user can see them on screen. The user may answer by speaking OR by clicking the cards on screen — if they click, you will be notified automatically and should NOT call notify_top_2 yourself in that case.
 
-Once the user gives 2 choices:
+Once the user gives 2 choices ORALLY (if they click instead, skip this — you'll be notified):
 1. Match each spoken answer to the closest canonical label from: [{choices_str}]. Use semantic and phonetic understanding — the user may mispronounce, abbreviate, or give a partial answer (e.g. "delhi" → "Delhi", "jazz" → "Jazz et new age", "rock" → "Rock"). NEVER ask for clarification for ambiguous answers — pick the closest match and move on silently.
 2. Call notify_top_2(question_id={q['id']}, top_2=[choice1, choice2]) IMMEDIATELY.
 3. Your mission for this step is complete."""
@@ -214,9 +209,9 @@ Once the user gives 2 choices:
 Question (id={q['id']}) : "{q['question']}"
 Choix disponibles : {choices_str}
 
-ÉTAPE : Demandez à {first_name} ses 2 choix PRÉFÉRÉS en UNE seule phrase naturelle. Ne lisez JAMAIS les choix à voix haute — l'utilisateur les voit à l'écran.{click_hint}
+ÉTAPE : Demandez à {first_name} ses 2 choix PRÉFÉRÉS en UNE seule phrase naturelle. Ne lisez JAMAIS les choix à voix haute — l'utilisateur les voit à l'écran. L'utilisateur peut répondre À L'ORAL ou en CLIQUANT sur les cartes à l'écran — s'il clique, vous serez notifié automatiquement et ne devez PAS appeler notify_top_2 vous-même dans ce cas.
 
-Une fois que l'utilisateur donne 2 choix :
+Une fois que l'utilisateur donne 2 choix À L'ORAL (s'il clique à la place, ignorez cette étape — vous serez notifié) :
 1. Faites correspondre chaque réponse vocale au label canonique le plus proche parmi : [{choices_str}]. Utilisez votre compréhension sémantique et phonétique — l'utilisateur peut mal prononcer, abréger ou donner une réponse partielle (ex: "délit" → "Delhi", "jazz" → "Jazz et new age", "gastro" → "Gastronomique"). INTERDIT ABSOLU : ne jamais signaler, corriger ou commenter — choisissez le label le plus proche et continuez directement.
 2. Appelez IMMÉDIATEMENT notify_top_2(question_id={q['id']}, top_2=[choix1, choix2]).
 3. Votre mission est terminée."""
@@ -245,26 +240,21 @@ Une fois que l'utilisateur donne 2 choix :
         top_2 = state.current_top_2
         choices_str = ", ".join(c["label"] if isinstance(c, dict) else c for c in q.get("choices", []))
 
-        click_hint = ""
-        if input_mode == "click":
-            click_hint = (" Before asking, call request_bottom_2_click(question_id) to signal the interface." if is_en
-                          else " Avant de poser la question, appelez request_bottom_2_click(question_id) pour signaler à l'interface.")
-
         if is_en:
-            mission = f"""Ask the user for their 2 LEAST liked choices from the REMAINING choices (excluding their favorites: {top_2}).{click_hint}
+            mission = f"""Ask the user for their 2 LEAST liked choices from the REMAINING choices (excluding their favorites: {top_2}). The user may answer by speaking OR by clicking the cards on screen — if they click, you will be notified automatically and should NOT call notify_bottom_2 yourself in that case.
 
-IMPORTANT: Never accept one of {top_2} as a least liked choice. If the user picks one, point it out with humor and ask again.
+IMPORTANT: Never accept one of {top_2} as a least liked choice. If the user picks one (orally), point it out with humor and ask again.
 
-Once the user gives 2 least liked choices:
+Once the user gives 2 least liked choices ORALLY (if they click instead, skip this — you'll be notified):
 1. Match each spoken answer to the closest canonical label from: [{choices_str}]. Use semantic and phonetic understanding — normalize silently without asking for confirmation.
 2. Call notify_bottom_2(question_id={q['id']}, bottom_2=[choice1, choice2]) IMMEDIATELY.
 3. Your mission is complete."""
         else:
-            mission = f"""Demandez les 2 choix les MOINS aimés parmi les choix RESTANTS (en excluant les favoris : {top_2}).{click_hint}
+            mission = f"""Demandez les 2 choix les MOINS aimés parmi les choix RESTANTS (en excluant les favoris : {top_2}). L'utilisateur peut répondre À L'ORAL ou en CLIQUANT sur les cartes à l'écran — s'il clique, vous serez notifié automatiquement et ne devez PAS appeler notify_bottom_2 vous-même dans ce cas.
 
-IMPORTANT : N'acceptez JAMAIS un choix de {top_2} comme moins aimé. Si l'utilisateur en choisit un, signalez-le avec humour et redemandez.
+IMPORTANT : N'acceptez JAMAIS un choix de {top_2} comme moins aimé. Si l'utilisateur en choisit un (à l'oral), signalez-le avec humour et redemandez.
 
-Une fois que l'utilisateur donne 2 choix :
+Une fois que l'utilisateur donne 2 choix À L'ORAL (s'il clique à la place, ignorez cette étape — vous serez notifié) :
 1. Faites correspondre chaque réponse vocale au label canonique le plus proche parmi : [{choices_str}]. Utilisez votre compréhension sémantique et phonétique — normalisez silencieusement sans demander confirmation. INTERDIT ABSOLU : ne jamais signaler, corriger ou commenter.
 2. Appelez IMMÉDIATEMENT notify_bottom_2(question_id={q['id']}, bottom_2=[choix1, choix2]).
 3. Votre mission est terminée."""
@@ -700,11 +690,11 @@ async def entrypoint(ctx: JobContext):
             return f"Profile updated: {field} = {value}"
         return f"Profil mis à jour : {field} = {value}"
 
-    @function_tool()
-    async def notify_top_2(question_id: int, top_2: list[str]):
-        """Notifies the frontend of the 2 favorite choices. Call IMMEDIATELY after identifying the 2 favorites. / Notifie le frontend des 2 choix préférés. Appeler IMMÉDIATEMENT après avoir identifié les 2 favoris."""
+    async def _notify_top_2_now(question_id: int, top_2: list[str]) -> str:
+        """Logique commune à l'outil notify_top_2 et à la réception d'un clic utilisateur
+        (_handle_top_2_clicked) — enregistre les 2 favoris, notifie le frontend, avance la phase."""
         state.current_top_2 = top_2
-        logger.info(f"[Q] notify_top_2 q={question_id} top_2={top_2}")
+        logger.info(f"[Q] top_2 q={question_id} top_2={top_2}")
         await send_state_update({
             "type": "top_2_selected",
             "state": "questionnaire",
@@ -712,6 +702,11 @@ async def entrypoint(ctx: JobContext):
             "top_2": top_2,
         })
         return await advance_to(AgentPhase.Q_JUSTIFY_FAV_1)
+
+    @function_tool()
+    async def notify_top_2(question_id: int, top_2: list[str]):
+        """Notifies the frontend of the 2 favorite choices. Call IMMEDIATELY after identifying the 2 favorites. / Notifie le frontend des 2 choix préférés. Appeler IMMÉDIATEMENT après avoir identifié les 2 favoris."""
+        return await _notify_top_2_now(question_id, top_2)
 
     @function_tool()
     async def notify_justification_top_2(question_id: int, choice: str):
@@ -725,11 +720,11 @@ async def entrypoint(ctx: JobContext):
         })
         return await advance_to(AgentPhase.Q_JUSTIFY_FAV_2)
 
-    @function_tool()
-    async def notify_bottom_2(question_id: int, bottom_2: list[str]):
-        """Notifies the frontend of the 2 least liked choices. Call IMMEDIATELY after identifying the 2 least liked. / Notifie le frontend des 2 choix les moins aimés. Appeler IMMÉDIATEMENT après avoir identifié les 2 moins aimés."""
+    async def _notify_bottom_2_now(question_id: int, bottom_2: list[str]) -> str:
+        """Logique commune à l'outil notify_bottom_2 et à la réception d'un clic utilisateur
+        (_handle_bottom_2_clicked) — enregistre les 2 moins aimés, notifie le frontend, avance la phase."""
         state.current_bottom_2 = bottom_2
-        logger.info(f"[Q] notify_bottom_2 q={question_id} bottom_2={bottom_2}")
+        logger.info(f"[Q] bottom_2 q={question_id} bottom_2={bottom_2}")
         await send_state_update({
             "type": "bottom_2_selected",
             "state": "questionnaire",
@@ -737,6 +732,11 @@ async def entrypoint(ctx: JobContext):
             "bottom_2": bottom_2,
         })
         return await advance_to(AgentPhase.Q_JUSTIFY_LEAST_1)
+
+    @function_tool()
+    async def notify_bottom_2(question_id: int, bottom_2: list[str]):
+        """Notifies the frontend of the 2 least liked choices. Call IMMEDIATELY after identifying the 2 least liked. / Notifie le frontend des 2 choix les moins aimés. Appeler IMMÉDIATEMENT après avoir identifié les 2 moins aimés."""
+        return await _notify_bottom_2_now(question_id, bottom_2)
 
     @function_tool()
     async def notify_asking_bottom_2(question_id: int, top_2: list[str]):
@@ -1024,33 +1024,11 @@ async def entrypoint(ctx: JobContext):
             return "Standby mode activated. Do not say anything else."
         return "Mode veille activé. Ne dis plus rien."
 
-    # Click mode tools (conditionnels)
-    if input_mode == "click":
-        @function_tool()
-        async def request_top_2_click(question_id: int):
-            """Signal the frontend to show the 'Reply' button for top 2 selection (click mode only). / Signale au frontend d'afficher le bouton 'Répondre' pour la sélection des 2 favoris (mode clic uniquement)."""
-            await send_state_update({
-                "type": "waiting_for_top_2",
-                "state": "questionnaire",
-                "question_id": question_id,
-            })
-            if is_en:
-                return "Frontend signaled: waiting for top 2 click."
-            return "Frontend signalé : attente du clic top 2."
-
-        @function_tool()
-        async def request_bottom_2_click(question_id: int):
-            """Signal the frontend to show the 'Reply' button for bottom 2 selection (click mode only). / Signale au frontend d'afficher le bouton 'Répondre' pour la sélection des 2 moins aimés (mode clic uniquement)."""
-            await send_state_update({
-                "type": "waiting_for_bottom_2",
-                "state": "questionnaire",
-                "question_id": question_id,
-            })
-            if is_en:
-                return "Frontend signaled: waiting for bottom 2 click."
-            return "Frontend signalé : attente du clic bottom 2."
-
     # ─── Collecte des tools ────────────────────────────────────────────────
+    # Les choix top_2/bottom_2 sont désormais cliquables dans toute session vocale — pas
+    # seulement en input_mode="click" — via notify_asking_top_2/notify_asking_bottom_2
+    # (toujours appelés) et _handle_top_2_clicked/_handle_bottom_2_clicked côté data channel
+    # 'control' (voir _on_data_received). Plus besoin de tools dédiés au mode clic.
 
     all_tools = [
         save_user_profile,
@@ -1070,8 +1048,6 @@ async def entrypoint(ctx: JobContext):
         all_tools.append(generate_catalog_matches)
     else:
         all_tools += [notify_asking_perfume_name, generate_formulas, get_available_ingredients, replace_note, change_formula_type]
-    if input_mode == "click":
-        all_tools += [request_top_2_click, request_bottom_2_click]
 
     # ─── Création de l'AgentSession ────────────────────────────────────────
 
@@ -1250,6 +1226,37 @@ async def entrypoint(ctx: JobContext):
 
         await _generate_formulas_now(state.formula_type or "mix")
 
+    async def _handle_top_2_clicked(question_id: int, values: list[str]):
+        """Reçoit les 2 favoris choisis par clic (data channel 'control', voir
+        _on_data_received) — alternative au fait de les dire à l'oral, utile quand l'IA ne
+        comprend pas bien une réponse vocale. Rejoue exactement la même logique que le tool
+        notify_top_2 (que le LLM aurait appelé après avoir compris la réponse orale), puis
+        relance une réplique pour que l'agent enchaîne sur la justification — le prompt système
+        a déjà été mis à jour vers Q_JUSTIFY_FAV_1 par _notify_top_2_now/advance_to."""
+        q = next((qq for qq in config["questions"] if qq["id"] == question_id), None)
+        if not q or state.phase != AgentPhase.Q_FAVORITES:
+            logger.warning(f"[CLICK] top_2 ignoré — question_id={question_id} phase={state.phase.name}")
+            return
+        logger.info(f"[CLICK] top_2 reçu q={question_id} values={values}")
+        await _notify_top_2_now(question_id, values)
+        try:
+            await session.generate_reply()
+        except Exception as e:
+            logger.warning(f"[CLICK] Échec relance après top_2: {e}")
+
+    async def _handle_bottom_2_clicked(question_id: int, values: list[str]):
+        """Équivalent de _handle_top_2_clicked pour les 2 moins aimés (phase Q_LEAST)."""
+        q = next((qq for qq in config["questions"] if qq["id"] == question_id), None)
+        if not q or state.phase != AgentPhase.Q_LEAST:
+            logger.warning(f"[CLICK] bottom_2 ignoré — question_id={question_id} phase={state.phase.name}")
+            return
+        logger.info(f"[CLICK] bottom_2 reçu q={question_id} values={values}")
+        await _notify_bottom_2_now(question_id, values)
+        try:
+            await session.generate_reply()
+        except Exception as e:
+            logger.warning(f"[CLICK] Échec relance après bottom_2: {e}")
+
     def _on_data_received(data_packet):
         try:
             msg = json.loads(data_packet.data.decode("utf-8"))
@@ -1287,6 +1294,18 @@ async def entrypoint(ctx: JobContext):
                 name = (msg.get("name") or "").strip()
                 if name:
                     asyncio.ensure_future(_handle_perfume_name_submitted(name))
+
+            elif msg_type == "questionnaire_top_2":
+                question_id = msg.get("question_id")
+                values = msg.get("values") or []
+                if question_id is not None and len(values) == 2:
+                    asyncio.ensure_future(_handle_top_2_clicked(question_id, values))
+
+            elif msg_type == "questionnaire_bottom_2":
+                question_id = msg.get("question_id")
+                values = msg.get("values") or []
+                if question_id is not None and len(values) == 2:
+                    asyncio.ensure_future(_handle_bottom_2_clicked(question_id, values))
 
         except Exception as e:
             logger.error(f"[DATA_RECEIVED] Erreur traitement message: {e}")
