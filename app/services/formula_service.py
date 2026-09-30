@@ -835,10 +835,11 @@ async def generate_formulas(session_id: str, force_type: str | None = None) -> d
     formulas = await _build_formulas(
         session_data["answers"], ingredients, boosters, user_allergens, language, force_type,
     )
+    perfume_name = profile.get("perfume_name") if profile else None
     for formula in formulas:
         formula.pop("_selected_names", None)
-        # TODO: moodboard temporairement désactivé pour accélérer la génération (voir formula_service.py)
-        # formula = await moodboard_service.attach_moodboard_safe(formula, language)
+        if perfume_name:
+            formula["perfume_name"] = perfume_name
 
     session_store.save_generated_formulas(session_id, formulas)
     return {"formulas": formulas}
@@ -850,6 +851,7 @@ async def generate_formulas_stateless(
     has_allergies: str = "non",
     user_allergens_raw: str = "",
     force_type: str | None = None,
+    perfume_name: str | None = None,
 ) -> dict:
     if not answers:
         return {"error": "Aucune réponse fournie", "formulas": []}
@@ -873,8 +875,8 @@ async def generate_formulas_stateless(
     )
     for formula in formulas:
         formula.pop("_selected_names", None)
-        # TODO: moodboard temporairement désactivé pour accélérer la génération (voir formula_service.py)
-        # formula = await moodboard_service.attach_moodboard_safe(formula, language)
+        if perfume_name:
+            formula["perfume_name"] = perfume_name
 
     return {"formulas": formulas}
 

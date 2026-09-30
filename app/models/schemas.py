@@ -31,7 +31,7 @@ class SaveAnswerRequest(BaseModel):
 
 
 class SaveProfileRequest(BaseModel):
-    field: Literal["first_name", "last_name", "email", "phone", "gender", "age", "has_allergies", "allergies"]
+    field: Literal["first_name", "last_name", "email", "phone", "gender", "age", "has_allergies", "allergies", "perfume_name"]
     value: str
 
 
@@ -73,6 +73,7 @@ class BatchGenerateRequest(BaseModel):
     allergies: str | None = None
     answers: list[BatchAnswerItem]
     formula_type: Literal["frais", "mix", "puissant"] | None = None
+    perfume_name: str | None = None
 
 
 class SendFormulaMailRequest(BaseModel):
@@ -92,6 +93,11 @@ class SaveFormulaRequest(BaseModel):
     customer_name: str | None = None
     customer_email: str | None = None
     participant_id: int | None = None
+    language: Literal["fr", "en"] = "fr"
+
+
+class StartMoodboardsRequest(BaseModel):
+    formulas: list[dict]
     language: Literal["fr", "en"] = "fr"
 
 
@@ -116,6 +122,7 @@ class MultiParticipant(BaseModel):
     pregnant: bool = False
     answers: list[BatchAnswerItem]
     formula_type: Literal["frais", "mix", "puissant"] | None = None
+    perfume_name: str | None = None
 
 
 class MultiGenerateRequest(BaseModel):

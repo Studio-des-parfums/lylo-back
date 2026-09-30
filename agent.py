@@ -79,6 +79,7 @@ class AgentPhase(Enum):
     Q_CONFIRM = auto()
     # Phase 3 — Formules
     INTENSITY = auto()
+    PERFUME_NAME = auto()
     PRESENT_FORMULAS = auto()
     # Phase 4 — Personnalisation / Découverte
     CUSTOMIZATION = auto()
@@ -95,6 +96,7 @@ class SessionState:
     profile: dict = field(default_factory=dict)
     answers_saved: int = 0
     formula_type: str | None = None
+    perfume_name: str | None = None
     selected_formula_index: int | None = None
 
 
@@ -312,9 +314,16 @@ Une fois que l'utilisateur donne 2 choix :
             else:
                 mission = f"""PREMIÈRE action (avant de parler) : appelez notify_asking_intensity(). Puis en UNE SEULE réplique courte, annoncez à {first_name} que vous allez maintenant trouver les parfums du catalogue qui correspondent le mieux à ses préférences. Appelez IMMÉDIATEMENT generate_catalog_matches() — aucune question nécessaire ici."""
         elif is_en:
-            mission = f"""FIRST action (before speaking): call notify_asking_intensity(). Then in ONE reply, ask {first_name} their fragrance intensity preference: "Before I create your formulas — do you prefer fragrances that are rather fresh and light, powerful and intense, or a mix of both?" Wait for their answer. Once they answer, call generate_formulas(formula_type=...) with 'frais', 'puissant' or 'mix'. If unsure, recommend 'mix' and call generate_formulas(formula_type='mix')."""
+            mission = f"""FIRST action (before speaking): call notify_asking_intensity(). Then in ONE reply, ask {first_name} their fragrance intensity preference: "Before I create your formulas — do you prefer fragrances that are rather fresh and light, powerful and intense, or a mix of both?" Wait for their answer. Once they answer, call notify_asking_perfume_name(formula_type=...) with 'frais', 'puissant' or 'mix' — do NOT call generate_formulas directly, notify_asking_perfume_name will ask for the perfume name first. If unsure, recommend 'mix'."""
         else:
-            mission = f"""PREMIÈRE action (avant de parler) : appelez notify_asking_intensity(). Puis en UNE SEULE réplique, demandez à {first_name} sa préférence d'intensité : "Avant de créer vos formules — vous préférez des parfums plutôt frais et légers, plutôt puissants et intenses, ou un mix des deux ?" Attendez sa réponse. Une fois qu'il/elle répond, appelez generate_formulas(formula_type=...) avec 'frais', 'puissant' ou 'mix'. Si indécis, recommandez 'mix' et appelez generate_formulas(formula_type='mix')."""
+            mission = f"""PREMIÈRE action (avant de parler) : appelez notify_asking_intensity(). Puis en UNE SEULE réplique, demandez à {first_name} sa préférence d'intensité : "Avant de créer vos formules — vous préférez des parfums plutôt frais et légers, plutôt puissants et intenses, ou un mix des deux ?" Attendez sa réponse. Une fois qu'il/elle répond, appelez notify_asking_perfume_name(formula_type=...) avec 'frais', 'puissant' ou 'mix' — n'appelez PAS generate_formulas directement, notify_asking_perfume_name demandera d'abord le nom du parfum. Si indécis, recommandez 'mix'."""
+
+    elif phase == AgentPhase.PERFUME_NAME:
+        first_name = state.profile.get("first_name", "")
+        if is_en:
+            mission = f"""A text field has just appeared on screen for {first_name} to type in. In ONE short reply, say something like: "And to finish — give your perfume a name! Type it on the screen when you're ready." Then WAIT — do not call any function. The user is typing, not speaking; do not expect a spoken answer. You will be notified automatically once they've validated their input."""
+        else:
+            mission = f"""Un champ de texte vient d'apparaître à l'écran pour que {first_name} puisse écrire. En UNE SEULE réplique courte, dites quelque chose comme : "Et pour finir, donnez un nom à votre parfum ! Écrivez-le à l'écran quand vous êtes prêt(e)." Puis ATTENDEZ — n'appelez aucune fonction. L'utilisateur tape, il ne parle pas ; n'attendez pas de réponse orale. Vous serez notifié automatiquement une fois sa saisie validée."""
 
     elif phase == AgentPhase.PRESENT_FORMULAS:
         first_name = state.profile.get("first_name", "")
@@ -795,6 +804,18 @@ async def entrypoint(ctx: JobContext):
         return "Frontend notifié : demande de préférence d'intensité."
 
     @function_tool()
+    async def notify_asking_perfume_name(formula_type: str):
+        """Call ONCE, right after the user answered their intensity preference, INSTEAD of calling generate_formulas directly. formula_type: 'frais', 'mix', or 'puissant'. Shows a text field on screen for the user to type their perfume's name — do NOT expect a spoken answer. / Appeler UNE SEULE FOIS, juste après que l'utilisateur ait répondu sur sa préférence d'intensité, À LA PLACE d'appeler generate_formulas directement. formula_type : 'frais', 'mix' ou 'puissant'. Affiche un champ de texte à l'écran pour que l'utilisateur tape le nom de son parfum — n'attendez pas de réponse orale."""
+        state.formula_type = formula_type
+        logger.info(f"[STATE] notify_asking_perfume_name type={formula_type}")
+        await send_state_update({
+            "type": "step_asking_perfume_name",
+            "state": "questionnaire",
+        })
+        next_prompt = await advance_to(AgentPhase.PERFUME_NAME)
+        return next_prompt
+
+    @function_tool()
     async def save_answer(question_id: int, question_text: str, top_2: list[str], bottom_2: list[str]):
         """Saves the user's confirmed choices for a question. Call ONLY after explicit user confirmation. / Sauvegarde les choix confirmés pour une question. Appeler UNIQUEMENT après confirmation explicite."""
         if state.phase != AgentPhase.Q_CONFIRM:
@@ -868,11 +889,10 @@ async def entrypoint(ctx: JobContext):
             )
         return None
 
-    @function_tool()
-    async def generate_formulas(formula_type: str):
-        """Generates 2 personalized perfume formulas. formula_type: 'frais', 'mix', or 'puissant'. / Génère 2 formules de parfum personnalisées. formula_type : 'frais', 'mix' ou 'puissant'."""
-        if error := _questionnaire_incomplete_error():
-            return error
+    async def _generate_formulas_now(formula_type: str) -> str:
+        """Logique commune à l'outil generate_formulas et à la reprise automatique après
+        saisie du nom du parfum (_handle_perfume_name_submitted) — appelle le backend, notifie
+        le frontend, avance la phase."""
         state.formula_type = formula_type
         logger.info(f"[FORMULAS] generate_formulas type={formula_type}")
         await send_state_update({"type": "state_change", "state": "generating_formulas"})
@@ -891,6 +911,13 @@ async def entrypoint(ctx: JobContext):
         })
         next_prompt = await advance_to(AgentPhase.PRESENT_FORMULAS)
         return json.dumps(data, ensure_ascii=False) + "\n\n" + next_prompt
+
+    @function_tool()
+    async def generate_formulas(formula_type: str):
+        """Generates 2 personalized perfume formulas. formula_type: 'frais', 'mix', or 'puissant'. / Génère 2 formules de parfum personnalisées. formula_type : 'frais', 'mix' ou 'puissant'."""
+        if error := _questionnaire_incomplete_error():
+            return error
+        return await _generate_formulas_now(formula_type)
 
     @function_tool()
     async def generate_catalog_matches():
@@ -1042,7 +1069,7 @@ async def entrypoint(ctx: JobContext):
     if is_esther:
         all_tools.append(generate_catalog_matches)
     else:
-        all_tools += [generate_formulas, get_available_ingredients, replace_note, change_formula_type]
+        all_tools += [notify_asking_perfume_name, generate_formulas, get_available_ingredients, replace_note, change_formula_type]
     if input_mode == "click":
         all_tools += [request_top_2_click, request_bottom_2_click]
 
@@ -1196,6 +1223,33 @@ async def entrypoint(ctx: JobContext):
                 inactivity_shutdown_task[0].cancel()
                 logger.info("[INACTIVITY] Activité détectée — coupure programmée annulée")
 
+    async def _handle_perfume_name_submitted(name: str):
+        """Reçoit le nom du parfum saisi au clavier par l'utilisateur (data channel 'control',
+        voir _on_data_received) — pas de dictée orale pour éviter les fautes d'orthographe.
+        Sauvegarde le nom, fait réagir l'agent brièvement, puis enchaîne directement sur
+        generate_formulas (le formula_type a déjà été stocké par notify_asking_perfume_name)."""
+        state.perfume_name = name
+        logger.info(f"[PERFUME_NAME] Reçu: {name!r}")
+        try:
+            await http.post(
+                f"/api/session/{session_id}/save-profile",
+                json={"field": "perfume_name", "value": name},
+            )
+        except Exception as e:
+            logger.warning(f"[PERFUME_NAME] Échec sauvegarde profil: {e}")
+
+        ack = (
+            f"Say ONE short enthusiastic sentence acknowledging the perfume name \"{name}\" the user just typed, then say you're creating their formulas now."
+            if is_en else
+            f"Dites UNE SEULE phrase courte et enthousiaste accueillant le nom de parfum \"{name}\" que l'utilisateur vient de taper, puis dites que vous créez ses formules maintenant."
+        )
+        try:
+            await session.generate_reply(instructions=ack)
+        except Exception as e:
+            logger.warning(f"[PERFUME_NAME] Échec réplique d'accueil: {e}")
+
+        await _generate_formulas_now(state.formula_type or "mix")
+
     def _on_data_received(data_packet):
         try:
             msg = json.loads(data_packet.data.decode("utf-8"))
@@ -1228,6 +1282,11 @@ async def entrypoint(ctx: JobContext):
                 else:
                     resume_prompt = "L'utilisateur vient de cliquer sur le bouton pour reprendre. Ne vous présentez pas à nouveau. Dites simplement 'Je vous écoute, quelle est votre question ?' Soyez bref(ve) et naturel(le)."
                 asyncio.ensure_future(session.generate_reply(instructions=resume_prompt))
+
+            elif msg_type == "perfume_name_submitted" and state.phase == AgentPhase.PERFUME_NAME:
+                name = (msg.get("name") or "").strip()
+                if name:
+                    asyncio.ensure_future(_handle_perfume_name_submitted(name))
 
         except Exception as e:
             logger.error(f"[DATA_RECEIVED] Erreur traitement message: {e}")

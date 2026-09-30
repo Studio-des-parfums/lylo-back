@@ -133,6 +133,7 @@ class GeneratedFormula(Base):
     customer_name = Column(String(200), nullable=True)
     customer_email = Column(String(255), nullable=True)
     language = Column(String(10), nullable=True)
+    perfume_name = Column(String(100), nullable=True)
     moodboard_notes_key = Column(String(64), nullable=True, index=True)
     moodboard_image_url = Column(String(500), nullable=True)
     input_mode = Column(String(20), nullable=True)

@@ -23,11 +23,12 @@ from app.models.schemas import (
     SelectFormulaRequest,
     SendFormulaByReferenceRequest,
     SendFormulaMailRequest,
+    StartMoodboardsRequest,
     StartSessionRequest,
     StartSessionResponse,
 )
 from app.config import get_settings
-from app.services import catalog_service, formula_service, livekit_service, mail_service, pdf_service, session_store, session_service
+from app.services import catalog_service, formula_service, livekit_service, mail_service, moodboard_service, pdf_service, session_store, session_service
 
 router = APIRouter(prefix="/api", tags=["sessions"])
 logger = logging.getLogger("lylo.sessions_api")
@@ -239,7 +240,10 @@ async def get_profile(session_id: str):
 
 
 @router.post("/session/{session_id}/generate-formulas")
-async def generate_formulas(session_id: str, body: GenerateFormulasRequest = GenerateFormulasRequest()):
+async def generate_formulas(
+    session_id: str, background_tasks: BackgroundTasks,
+    body: GenerateFormulasRequest = GenerateFormulasRequest(),
+):
     if not session_store.is_profile_complete(session_id):
         raise HTTPException(
             status_code=400,
@@ -253,6 +257,7 @@ async def generate_formulas(session_id: str, body: GenerateFormulasRequest = Gen
         result = await formula_service.generate_formulas(session_id, force_type=body.formula_type)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
+    _queue_moodboards(background_tasks, result.get("formulas", []), meta.get("language", "fr"))
     return result
 
 
@@ -262,6 +267,19 @@ def _extract_moodboard_fields(formula: dict) -> dict:
         "moodboard_notes_key": moodboard.get("notes_key"),
         "moodboard_image_url": moodboard.get("image_url"),
     }
+
+
+def _queue_moodboards(background_tasks: BackgroundTasks, formulas: list[dict], language: str) -> None:
+    """Démarre la génération des moodboards dès que les formules existent, en tâche de
+    fond — la réponse HTTP de génération part immédiatement, sans attendre les images.
+    Le résultat est mis en cache par notes_key (formula_moodboards), donc une sélection
+    ultérieure de l'une de ces formules retrouvera l'image déjà prête ou en cours."""
+    for formula in formulas:
+        if formula.get("source") == "catalog":
+            continue
+        background_tasks.add_task(
+            moodboard_service.generate_moodboard_in_background, formula, language,
+        )
 
 
 @router.post("/session/{session_id}/select-formula")
@@ -323,6 +341,7 @@ async def select_formula(
             customer_name=customer_name,
             customer_email=profile.get("email"),
             language=meta.get("language"),
+            perfume_name=formula.get("perfume_name") or profile.get("perfume_name"),
             **_extract_moodboard_fields(formula),
             participant_id=meta.get("participant_id"),
             owner_type=meta.get("owner_type"),
@@ -330,6 +349,14 @@ async def select_formula(
             owner_customer_id=meta.get("owner_id") if meta.get("owner_type") == "customer" else None,
         )
     result["reference"] = db_formula.reference
+
+    if brand != "ester" and not db_formula.moodboard_image_url:
+        background_tasks.add_task(
+            moodboard_service.generate_moodboard_for_reference,
+            db_formula.reference,
+            formula,
+            meta.get("language", "fr"),
+        )
 
     # Plus d'envoi automatique ici : l'utilisateur déclenche l'envoi explicitement via
     # le bouton "Recevoir par mail" (POST /formulas/{reference}/send-mail), qui recueille
@@ -375,6 +402,47 @@ async def replace_note(
             **_extract_moodboard_fields(formula),
         )
     return result
+
+
+@router.get("/formulas/{reference}/moodboard")
+async def get_formula_moodboard(reference: str, db: AsyncSession = Depends(get_db)):
+    """Poll léger pour récupérer l'image moodboard une fois générée en arrière-plan."""
+    formula = await crud.get_generated_formula_by_reference(db, reference)
+    if not formula:
+        raise HTTPException(status_code=404, detail="Formula not found")
+    return {
+        "reference": reference,
+        "moodboard_image_url": formula.moodboard_image_url,
+        "ready": formula.moodboard_image_url is not None,
+    }
+
+
+@router.post("/formulas/moodboard/start")
+async def start_moodboards(body: StartMoodboardsRequest, background_tasks: BackgroundTasks):
+    """Démarre la génération des moodboards dès l'écran de comparaison (avant toute
+    sélection/sauvegarde), par notes_key uniquement — pas de session ni de reference requise.
+    Le résultat est mis en cache (formula_moodboards), donc une sélection ultérieure de l'une
+    de ces formules retrouvera directement l'image déjà prête ou en cours."""
+    started = []
+    for formula in body.formulas:
+        notes_key = moodboard_service.build_notes_key(formula)
+        background_tasks.add_task(
+            moodboard_service.generate_moodboard_in_background, formula, body.language,
+        )
+        started.append(notes_key)
+    return {"notes_keys": started}
+
+
+@router.get("/formulas/moodboard/by-notes/{notes_key}")
+async def get_moodboard_by_notes(notes_key: str):
+    """Poll par notes_key — utilisé tant qu'aucune reference DB n'existe encore pour la
+    formule (avant sélection/sauvegarde définitive)."""
+    image_url = await moodboard_service.get_moodboard_image_url(notes_key)
+    return {
+        "notes_key": notes_key,
+        "moodboard_image_url": image_url,
+        "ready": image_url is not None,
+    }
 
 
 @router.get("/session/{session_id}/formula/pdf")
@@ -540,7 +608,10 @@ async def list_formulas(
 
 
 @router.post("/formulas/save")
-async def save_formula(body: SaveFormulaRequest, db: AsyncSession = Depends(get_db)):
+async def save_formula(
+    body: SaveFormulaRequest, background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     formula = body.formula
     db_formula = await crud.create_generated_formula(
         db,
@@ -554,9 +625,19 @@ async def save_formula(body: SaveFormulaRequest, db: AsyncSession = Depends(get_
         customer_name=body.customer_name,
         customer_email=body.customer_email,
         language=body.language,
+        perfume_name=formula.get("perfume_name"),
         **_extract_moodboard_fields(formula),
         participant_id=body.participant_id,
     )
+
+    if not db_formula.moodboard_image_url:
+        background_tasks.add_task(
+            moodboard_service.generate_moodboard_for_reference,
+            db_formula.reference,
+            formula,
+            body.language or "fr",
+        )
+
     return {"reference": db_formula.reference}
 
 
@@ -588,7 +669,7 @@ async def replace_note_stateless(
 
 
 @router.post("/formulas/generate")
-async def batch_generate_formulas(body: BatchGenerateRequest):
+async def batch_generate_formulas(body: BatchGenerateRequest, background_tasks: BackgroundTasks):
     answers = {
         str(a.question_id): {
             "question": a.question_text,
@@ -611,14 +692,16 @@ async def batch_generate_formulas(body: BatchGenerateRequest):
             has_allergies=body.has_allergies,
             user_allergens_raw=body.allergies or "",
             force_type=body.formula_type,
+            perfume_name=body.perfume_name,
         )
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
+    _queue_moodboards(background_tasks, result.get("formulas", []), body.language)
     return result
 
 
 @router.post("/formulas/generate-multi")
-async def multi_generate_formulas(body: MultiGenerateRequest):
+async def multi_generate_formulas(body: MultiGenerateRequest, background_tasks: BackgroundTasks):
     """Génère 2 formules pour chaque participant (mode visuel multi-utilisateurs)."""
     results = []
     for participant in body.participants:
@@ -644,9 +727,11 @@ async def multi_generate_formulas(body: MultiGenerateRequest):
                 has_allergies=participant.has_allergies,
                 user_allergens_raw=participant.allergies or "",
                 force_type=participant.formula_type,
+                perfume_name=participant.perfume_name,
             )
         if "error" in result:
             raise HTTPException(status_code=400, detail=f"[{participant.color}] {result['error']}")
+        _queue_moodboards(background_tasks, result.get("formulas", []), body.language)
         results.append({
             "color": participant.color,
             "formulas": result.get("formulas", []),
@@ -655,7 +740,10 @@ async def multi_generate_formulas(body: MultiGenerateRequest):
 
 
 @router.post("/formulas/save-multi")
-async def save_multi_formulas(body: SaveMultiFormulaRequest, db: AsyncSession = Depends(get_db)):
+async def save_multi_formulas(
+    body: SaveMultiFormulaRequest, background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     """Sauvegarde la formule sélectionnée par chaque participant, avec référence individuelle."""
     saved = []
     for sel in body.selections:
@@ -672,11 +760,19 @@ async def save_multi_formulas(body: SaveMultiFormulaRequest, db: AsyncSession = 
             customer_name=sel.customer_name,
             customer_email=sel.customer_email,
             language=body.language,
+            perfume_name=formula.get("perfume_name"),
             **_extract_moodboard_fields(formula),
             input_mode=body.input_mode,
             participant_color=sel.color,
             participant_id=sel.participant_id,
         )
+        if not db_formula.moodboard_image_url:
+            background_tasks.add_task(
+                moodboard_service.generate_moodboard_for_reference,
+                db_formula.reference,
+                formula,
+                body.language or "fr",
+            )
         saved.append({
             "color": sel.color,
             "reference": db_formula.reference,
