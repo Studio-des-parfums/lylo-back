@@ -24,12 +24,13 @@ from app.models.schemas import (
     SelectFormulaRequest,
     SendFormulaByReferenceRequest,
     SendFormulaMailRequest,
+    SimilarPerfumesRequest,
     StartMoodboardsRequest,
     StartSessionRequest,
     StartSessionResponse,
 )
 from app.config import get_settings
-from app.services import catalog_service, formula_service, livekit_service, mail_service, moodboard_service, pdf_service, session_store, session_service
+from app.services import catalog_service, formula_service, livekit_service, mail_service, moodboard_service, pdf_service, session_store, session_service, similar_perfumes_service
 
 router = APIRouter(prefix="/api", tags=["sessions"])
 logger = logging.getLogger("lylo.sessions_api")
@@ -671,6 +672,17 @@ async def replace_note_stateless(
             sizes=updated.get("sizes"),
         )
 
+    return result
+
+
+@router.post("/formulas/similar-perfumes")
+async def similar_perfumes(body: SimilarPerfumesRequest):
+    """Cherche, via un LLM avec accès web, 2 parfums du commerce ressemblant à la
+    formule donnée — appelé à la demande (bouton "?" sur la carte formule), pas
+    automatiquement à la génération."""
+    result = await similar_perfumes_service.find_similar_perfumes(body.formula, body.language)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
     return result
 
 

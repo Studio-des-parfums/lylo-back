@@ -115,6 +115,11 @@ class ReplaceNoteStatelessRequest(BaseModel):
     reference: str | None = None
 
 
+class SimilarPerfumesRequest(BaseModel):
+    formula: dict
+    language: SupportedLanguage = "fr"
+
+
 class MultiParticipant(BaseModel):
     color: str
     gender: str
