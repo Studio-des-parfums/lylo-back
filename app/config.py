@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     voice_en_male: str
     voice_es_female: str = ""
     voice_es_male: str = ""
+    voice_de_female: str = ""
+    voice_de_male: str = ""
+    voice_ar_female: str = ""
+    voice_ar_male: str = ""
+    voice_ru_female: str = ""
+    voice_ru_male: str = ""
 
     # OpenAI
     openai_api_key: str
@@ -80,6 +86,9 @@ class Settings(BaseSettings):
             "fr": {"female": self.voice_fr_female, "male": self.voice_fr_male},
             "en": {"female": self.voice_en_female, "male": self.voice_en_male},
             "es": {"female": self.voice_es_female, "male": self.voice_es_male},
+            "de": {"female": self.voice_de_female, "male": self.voice_de_male},
+            "ar": {"female": self.voice_ar_female, "male": self.voice_ar_male},
+            "ru": {"female": self.voice_ru_female, "male": self.voice_ru_male},
         }
 
     def get_voice_id(self, language: SupportedLanguage, voice_gender: str) -> str:
