@@ -2,9 +2,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.core.languages import SupportedLanguage
+
 
 class StartSessionRequest(BaseModel):
-    language: Literal["fr", "en"] = "fr"
+    language: SupportedLanguage = "fr"
     voice_gender: Literal["female", "male"] = "female"
     question_count: int = Field(default=1, ge=1, le=12)
     mode: Literal["guided", "discovery"] = "guided"
@@ -65,7 +67,7 @@ class BatchAnswerItem(BaseModel):
 
 
 class BatchGenerateRequest(BaseModel):
-    language: Literal["fr", "en"] = "fr"
+    language: SupportedLanguage = "fr"
     brand: Literal["lylo", "ester"] = "lylo"
     gender: str
     age: str
@@ -78,7 +80,7 @@ class BatchGenerateRequest(BaseModel):
 
 class SendFormulaMailRequest(BaseModel):
     email: str
-    language: Literal["fr", "en"] = "fr"
+    language: SupportedLanguage = "fr"
     formula: dict
 
 
@@ -93,12 +95,12 @@ class SaveFormulaRequest(BaseModel):
     customer_name: str | None = None
     customer_email: str | None = None
     participant_id: int | None = None
-    language: Literal["fr", "en"] = "fr"
+    language: SupportedLanguage = "fr"
 
 
 class StartMoodboardsRequest(BaseModel):
     formulas: list[dict]
-    language: Literal["fr", "en"] = "fr"
+    language: SupportedLanguage = "fr"
 
 
 class ReplaceNoteStatelessRequest(BaseModel):
@@ -106,7 +108,7 @@ class ReplaceNoteStatelessRequest(BaseModel):
     note_type: Literal["top", "heart", "base"]
     old_note: str
     new_note: str
-    language: Literal["fr", "en"] = "fr"
+    language: SupportedLanguage = "fr"
     # Référence déjà sauvegardée en base pour cette formule (si l'utilisateur a déjà
     # choisi une carte) — permet de répercuter la note modifiée sur l'enregistrement
     # existant plutôt que de le laisser périmé.
@@ -126,7 +128,7 @@ class MultiParticipant(BaseModel):
 
 
 class MultiGenerateRequest(BaseModel):
-    language: Literal["fr", "en"] = "fr"
+    language: SupportedLanguage = "fr"
     brand: Literal["lylo", "ester"] = "lylo"
     participants: list[MultiParticipant]
 
@@ -140,7 +142,7 @@ class MultiFormulaSelection(BaseModel):
 
 
 class SaveMultiFormulaRequest(BaseModel):
-    language: Literal["fr", "en"] = "fr"
+    language: SupportedLanguage = "fr"
     input_mode: str = "quiz"
     selections: list[MultiFormulaSelection]
 

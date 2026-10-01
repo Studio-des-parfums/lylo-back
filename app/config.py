@@ -2,6 +2,8 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.languages import SUPPORTED_LANGUAGES, SupportedLanguage
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -30,6 +32,8 @@ class Settings(BaseSettings):
     voice_fr_male: str
     voice_en_female: str
     voice_en_male: str
+    voice_es_female: str = ""
+    voice_es_male: str = ""
 
     # OpenAI
     openai_api_key: str
@@ -71,11 +75,21 @@ class Settings(BaseSettings):
     cloudinary_api_secret: str = ""
 
     @property
-    def voice_mapping(self) -> dict[str, dict[str, str]]:
+    def voice_mapping(self) -> dict[SupportedLanguage, dict[str, str]]:
         return {
             "fr": {"female": self.voice_fr_female, "male": self.voice_fr_male},
             "en": {"female": self.voice_en_female, "male": self.voice_en_male},
+            "es": {"female": self.voice_es_female, "male": self.voice_es_male},
         }
+
+    def get_voice_id(self, language: SupportedLanguage, voice_gender: str) -> str:
+        voice_id = self.voice_mapping[language][voice_gender]
+        if not voice_id:
+            raise ValueError(
+                f"Voix manquante pour la langue '{language}' ({voice_gender}) : "
+                f"définis VOICE_{language.upper()}_{voice_gender.upper()} dans .env"
+            )
+        return voice_id
 
 
 @lru_cache

@@ -324,6 +324,13 @@ async def get_formulas(
 
 # --- Question CRUD ---
 
+async def get_distinct_question_languages(db: AsyncSession) -> list[str]:
+    result = await db.execute(
+        select(Question.language).where(Question.is_active == True).distinct()
+    )
+    return sorted(result.scalars().all())
+
+
 async def get_all_questions(db: AsyncSession, language: str | None = None, active_only: bool = True) -> list[Question]:
     query = select(Question).options(selectinload(Question.choices), selectinload(Question.groups))
     if active_only:

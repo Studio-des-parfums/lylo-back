@@ -14,6 +14,7 @@ import openpyxl
 from openai import AsyncOpenAI
 
 from app.config import get_settings
+from app.core.languages import LANGUAGE_NAMES
 from app.services import session_store
 
 logger = logging.getLogger("lylo.catalog")
@@ -125,7 +126,7 @@ Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ni après, dans 
   "matches": [
     {{
       "catalog_index": 0,
-      "match_reason": "description courte et poétique en {'français' if language == 'fr' else 'anglais'} expliquant pourquoi ce parfum correspond au profil du client (2-3 phrases)"
+      "match_reason": "description courte et poétique en {LANGUAGE_NAMES.get(language, LANGUAGE_NAMES['fr'])} expliquant pourquoi ce parfum correspond au profil du client (2-3 phrases)"
     }}
   ]
 }}

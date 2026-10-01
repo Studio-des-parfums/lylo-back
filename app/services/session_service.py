@@ -77,7 +77,7 @@ async def create_session(
     room_name = f"room_{session_id}"
     user_identity = f"user_{session_id}"
 
-    voice_id = settings.voice_mapping[language][voice_gender]
+    voice_id = settings.get_voice_id(language, voice_gender)
     questions = await _load_questions_from_db(language, question_count)
 
     user_token = create_token(user_identity, room_name)

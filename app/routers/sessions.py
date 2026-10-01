@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.languages import SupportedLanguage
 from app.database.connection import get_db
 from app.database import crud
 from app.models.schemas import (
@@ -463,8 +464,13 @@ async def get_all_answers():
     return session_store.get_all_sessions()
 
 
+@router.get("/languages")
+async def get_languages(db: AsyncSession = Depends(get_db)):
+    return {"languages": await crud.get_distinct_question_languages(db)}
+
+
 @router.get("/questions")
-async def get_questions(count: int = 12, language: str = "fr", db: AsyncSession = Depends(get_db)):
+async def get_questions(count: int = 12, language: SupportedLanguage = "fr", db: AsyncSession = Depends(get_db)):
     groups = await crud.get_active_question_groups_with_questions(db, language=language)
     if not groups:
         raise HTTPException(status_code=404, detail="Aucun groupe de questions actif disponible")

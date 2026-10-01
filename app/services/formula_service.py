@@ -16,6 +16,7 @@ import httpx
 from openai import AsyncOpenAI
 
 from app.config import get_settings
+from app.core.languages import LANGUAGE_NAMES
 from app.services import moodboard_service, session_store
 
 # ── Configuration des types de formules ──────────────────────────────
@@ -107,6 +108,12 @@ _CACHE_TTL_SECONDS = 60.0
 _ingredients_api_cache: dict[tuple[str, str], tuple[float, list[dict]]] = {}
 
 
+def ingredients_api_language(language: str) -> str:
+    """Le dashboard SDP (API externe d'ingrédients) ne gère que fr/en — toute
+    langue de session qui n'est pas le français interroge l'API en anglais."""
+    return "fr" if language == "fr" else "en"
+
+
 async def _fetch_ingredients_raw(params: dict) -> list[dict]:
     """Appelle GET /api/ingredients avec les `params` donnés, avec cache court en mémoire.
 
@@ -136,19 +143,26 @@ async def _load_ingredients_from_db(language: str, category: str | None = None) 
 
     Note : le paramètre `category` n'existe pas côté API dashboard (qui filtre
     par `box_set`) ; il est conservé pour compatibilité de signature mais ignoré.
+
+    Le dashboard SDP ne connaît des ingrédients qu'en fr/en — toute langue de
+    session autre que le français interroge donc l'API en anglais (fallback
+    `ingredients_api_language`) ; le nom est lu sous cette même clé mappée
+    (`api_language`), jamais sous la langue de session brute (ex. "es"), qui
+    n'existe pas dans `translations` et retomberait sinon sur le français.
     """
     settings = get_settings()
+    api_language = ingredients_api_language(language)
     params = {
         "box_set": settings.ingredients_box_set,
         "active_only": "true",
-        "language": language,
+        "language": api_language,
     }
     raw_ingredients = await _fetch_ingredients_raw(params)
 
     ingredients = []
     for i in raw_ingredients:
         translations = i.get("translations") or {}
-        name = translations.get(language) or translations.get("fr") or translations.get("en") or ""
+        name = translations.get(api_language) or translations.get("en") or translations.get("fr") or ""
         if not name:
             continue
         ingredients.append({
@@ -169,10 +183,11 @@ async def _load_boosters_from_db(language: str) -> list[dict]:
     `box_set` (contrairement à `_load_ingredients_from_db`), sous peine de ne
     jamais en recevoir.
     """
+    api_language = ingredients_api_language(language)
     params = {
         "type": "booster",
         "active_only": "true",
-        "language": language,
+        "language": api_language,
     }
     raw_boosters = await _fetch_ingredients_raw(params)
 
@@ -181,7 +196,7 @@ async def _load_boosters_from_db(language: str) -> list[dict]:
         if b.get("type") != "booster":
             continue
         translations = b.get("translations") or {}
-        name = translations.get(language) or translations.get("fr") or translations.get("en") or ""
+        name = translations.get(api_language) or translations.get("en") or translations.get("fr") or ""
         if not name:
             continue
         boosters.append({"id": b.get("id"), "name": name})
@@ -295,7 +310,7 @@ Le client a déclaré les allergies suivantes : {', '.join(user_allergens)}.
   "heart_notes": [%s, %s, %s],
   "base_notes": [%s, %s]
 }""" % (
-        "français" if language == "fr" else "anglais",
+        LANGUAGE_NAMES.get(language, LANGUAGE_NAMES["fr"]),
         note_entry_schema, note_entry_schema,
         note_entry_schema, note_entry_schema, note_entry_schema,
         note_entry_schema, note_entry_schema,
