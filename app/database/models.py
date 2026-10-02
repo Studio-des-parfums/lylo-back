@@ -70,8 +70,12 @@ class Question(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     text = Column(Text, nullable=False)
-    language = Column(String(10), nullable=False)  # fr, en
+    language = Column(String(10), nullable=False)  # fr, en, es, de, ar, ru
     is_active = Column(Boolean, default=True)
+    # Relie entre elles les variantes de langue d'une même question logique (générées par
+    # traduction automatique depuis le français) — null pour les questions créées avant
+    # l'introduction de la traduction automatique.
+    translation_group_id = Column(String(36), nullable=True, index=True)
 
     choices = relationship("QuestionChoice", back_populates="question", cascade="all, delete-orphan")
     groups = relationship("QuestionGroup", secondary=question_group_links, back_populates="questions")
@@ -94,7 +98,10 @@ class QuestionChoice(Base):
     question_id = Column(Integer, ForeignKey("questions.id"), nullable=False, index=True)
     text = Column(String(255), nullable=False)
     image_url = Column(String(500), nullable=True)
-    language = Column(String(10), nullable=False)  # fr, en
+    language = Column(String(10), nullable=False)  # fr, en, es, de, ar, ru
+    # Relie entre eux les choix traduits d'un même choix logique (sur les questions sœurs
+    # d'un translation_group_id) — permet de répercuter une image uploadée après coup.
+    translation_group_id = Column(String(36), nullable=True, index=True)
 
     question = relationship("Question", back_populates="choices")
 

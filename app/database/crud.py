@@ -348,6 +348,18 @@ async def get_question_by_id(db: AsyncSession, question_id: int) -> Question | N
     return result.scalar_one_or_none()
 
 
+async def get_questions_by_translation_group(db: AsyncSession, translation_group_id: str) -> list[Question]:
+    """Les variantes de langue (sœurs de traduction) d'une même question logique — utilisé
+    pour répercuter un choix ajouté en français sur ses traductions déjà créées, et pour les
+    afficher à l'admin (GET /catalog/questions/:id/translations)."""
+    result = await db.execute(
+        select(Question)
+        .options(selectinload(Question.choices), selectinload(Question.groups))
+        .where(Question.translation_group_id == translation_group_id)
+    )
+    return result.scalars().all()
+
+
 async def _get_groups_by_ids(db: AsyncSession, group_ids: list[int]) -> list[QuestionGroup]:
     if not group_ids:
         return []
@@ -367,12 +379,20 @@ def _validate_question_has_groups(groups: list[QuestionGroup]) -> None:
         raise ValueError("Une question doit appartenir à au moins un groupe")
 
 
-def _validate_group_capacity(groups: list[QuestionGroup], *, current_question_id: int | None = None) -> None:
+def _validate_group_capacity(
+    groups: list[QuestionGroup], *, language: str, current_question_id: int | None = None
+) -> None:
+    """La limite de 12 questions s'applique par langue (chaque langue a son propre
+    questionnaire complet) — sans ce filtre, traduire une question en 5 langues
+    saturerait artificiellement la capacité du groupe au bout de 2 questions FR."""
     for group in groups:
-        count = sum(1 for question in group.questions if question.id != current_question_id)
+        count = sum(
+            1 for question in group.questions
+            if question.id != current_question_id and question.language == language
+        )
         if count >= MAX_QUESTIONS_PER_GROUP:
             raise ValueError(
-                f'Le groupe "{group.name}" a déjà atteint la limite de {MAX_QUESTIONS_PER_GROUP} questions'
+                f'Le groupe "{group.name}" a déjà atteint la limite de {MAX_QUESTIONS_PER_GROUP} questions pour la langue "{language}"'
             )
 
 
@@ -384,7 +404,7 @@ async def create_question(db: AsyncSession, **kwargs) -> Question:
     group_ids = kwargs.pop("group_ids", [])
     groups = await _get_groups_by_ids(db, group_ids)
     _validate_question_has_groups(groups)
-    _validate_group_capacity(groups)
+    _validate_group_capacity(groups, language=kwargs["language"])
     question = Question(**kwargs)
     _sync_question_groups(question, groups)
     db.add(question)
@@ -400,7 +420,7 @@ async def update_question(db: AsyncSession, question_id: int, **kwargs) -> Quest
         group_ids = kwargs.pop("group_ids") or []
         groups = await _get_groups_by_ids(db, group_ids)
         _validate_question_has_groups(groups)
-        _validate_group_capacity(groups, current_question_id=question_id)
+        _validate_group_capacity(groups, language=question.language, current_question_id=question_id)
         _sync_question_groups(question, groups)
     for field, value in kwargs.items():
         setattr(question, field, value)
@@ -507,6 +527,13 @@ async def create_choice(db: AsyncSession, **kwargs) -> QuestionChoice:
 async def get_choice_by_id(db: AsyncSession, choice_id: int) -> QuestionChoice | None:
     result = await db.execute(select(QuestionChoice).where(QuestionChoice.id == choice_id))
     return result.scalar_one_or_none()
+
+
+async def get_choices_by_translation_group(db: AsyncSession, translation_group_id: str) -> list[QuestionChoice]:
+    result = await db.execute(
+        select(QuestionChoice).where(QuestionChoice.translation_group_id == translation_group_id)
+    )
+    return result.scalars().all()
 
 
 async def update_choice(db: AsyncSession, choice_id: int, **kwargs) -> QuestionChoice | None:

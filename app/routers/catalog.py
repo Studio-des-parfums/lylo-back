@@ -1,10 +1,12 @@
+import uuid
+
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.connection import get_db
 from app.database import crud
-from app.services import cloudinary_service
+from app.services import cloudinary_service, question_translation_service
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 
@@ -157,10 +159,46 @@ async def get_question(question_id: int, db: AsyncSession = Depends(get_db)):
     return question
 
 
+@router.get("/questions/{question_id}/translations", response_model=list[QuestionResponse])
+async def get_question_translations(question_id: int, db: AsyncSession = Depends(get_db)):
+    """Les variantes de langue (questions sœurs) générées par traduction automatique à
+    partir de cette question — utilisé par l'admin pour vérifier le résultat sans changer
+    de filtre de langue. Liste vide si la question n'a pas (encore) de traductions."""
+    question = await crud.get_question_by_id(db, question_id)
+    if not question:
+        raise HTTPException(status_code=404, detail="Question introuvable")
+    if not question.translation_group_id:
+        return []
+    siblings = await crud.get_questions_by_translation_group(db, question.translation_group_id)
+    return [s for s in siblings if s.id != question_id]
+
+
 @router.post("/questions", response_model=QuestionResponse, status_code=201)
 async def create_question(body: QuestionCreate, db: AsyncSession = Depends(get_db)):
+    """Crée la question dans la langue demandée. Si la langue est le français (saisie admin
+    normale), traduit automatiquement le texte et crée en plus une question sœur par autre
+    langue supportée, reliées entre elles via translation_group_id — l'admin ne saisit donc
+    le questionnaire qu'une fois, en français."""
+    data = body.model_dump()
     try:
-        return await crud.create_question(db, **body.model_dump())
+        if data["language"] != "fr":
+            return await crud.create_question(db, **data)
+
+        translation_group_id = str(uuid.uuid4())
+        fr_question = await crud.create_question(db, **data, translation_group_id=translation_group_id)
+
+        translations = await question_translation_service.translate_text(data["text"])
+        for lang, translated_text in translations.items():
+            await crud.create_question(
+                db,
+                text=translated_text,
+                language=lang,
+                is_active=data["is_active"],
+                group_ids=data["group_ids"],
+                translation_group_id=translation_group_id,
+            )
+
+        return await crud.get_question_by_id(db, fr_question.id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -221,10 +259,37 @@ async def delete_question_group(group_id: int, db: AsyncSession = Depends(get_db
 
 @router.post("/questions/{question_id}/choices", response_model=ChoiceResponse, status_code=201)
 async def create_choice(question_id: int, body: ChoiceCreate, db: AsyncSession = Depends(get_db)):
+    """Crée le choix dans la langue de sa question. Si la question est française et a des
+    questions sœurs traduites (translation_group_id), traduit le texte du choix et crée le
+    choix correspondant sur chacune des questions sœurs, avec la même image."""
     question = await crud.get_question_by_id(db, question_id)
     if not question:
         raise HTTPException(status_code=404, detail="Question introuvable")
-    return await crud.create_choice(db, question_id=question_id, **body.model_dump())
+
+    data = body.model_dump()
+    has_siblings = question.language == "fr" and bool(question.translation_group_id)
+    choice_translation_group_id = str(uuid.uuid4()) if has_siblings else None
+    choice = await crud.create_choice(
+        db, question_id=question_id, translation_group_id=choice_translation_group_id, **data
+    )
+
+    if has_siblings:
+        siblings = await crud.get_questions_by_translation_group(db, question.translation_group_id)
+        other_siblings = [s for s in siblings if s.id != question_id]
+        if other_siblings:
+            translations = await question_translation_service.translate_text(data["text"])
+            for sibling in other_siblings:
+                translated_text = translations.get(sibling.language, data["text"])
+                await crud.create_choice(
+                    db,
+                    question_id=sibling.id,
+                    text=translated_text,
+                    image_url=data.get("image_url"),
+                    language=sibling.language,
+                    translation_group_id=choice_translation_group_id,
+                )
+
+    return choice
 
 
 @router.patch("/choices/{choice_id}", response_model=ChoiceResponse)
@@ -270,6 +335,15 @@ async def upload_choice_image(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     updated = await crud.update_choice(db, choice_id, image_url=image_url)
+
+    # Répercute la même image sur les choix traduits (les autres langues réutilisent
+    # exactement la même illustration que le choix français).
+    if choice.translation_group_id:
+        siblings = await crud.get_choices_by_translation_group(db, choice.translation_group_id)
+        for sibling in siblings:
+            if sibling.id != choice_id:
+                await crud.update_choice(db, sibling.id, image_url=image_url)
+
     return updated
 
 
