@@ -156,6 +156,14 @@ class GeneratedFormula(Base):
     owner_customer = relationship("Customer")
 
 
+class ProjectLogo(Base):
+    __tablename__ = "project_logo"
+
+    id = Column(Integer, primary_key=True, index=True)
+    image_url = Column(String(500), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class FormulaMoodboard(Base):
     __tablename__ = "formula_moodboards"
 

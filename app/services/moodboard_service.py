@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from app.config import get_settings
 from app.database.connection import AsyncSessionLocal
 from app.database import crud
-from app.services import cloudinary_service
+from app.services import s3_service
 
 logger = logging.getLogger("lylo.moodboard")
 
@@ -131,7 +131,7 @@ async def attach_moodboard(formula: dict, language: str) -> dict:
             return formula
 
         image_bytes = await _generate_moodboard_image_bytes(formula, language)
-        image_url, public_id = cloudinary_service.upload_moodboard_image(notes_key, image_bytes)
+        image_url, public_id = s3_service.upload_moodboard_image(notes_key, image_bytes)
         try:
             created = await crud.create_formula_moodboard(
                 db,

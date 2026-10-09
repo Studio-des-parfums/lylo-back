@@ -13,6 +13,7 @@ from app.database.models import (
     Ingredient,
     Participant,
     Printer,
+    ProjectLogo,
     Question,
     QuestionChoice,
     QuestionGroup,
@@ -272,6 +273,29 @@ async def update_generated_formula_by_session(db: AsyncSession, session_id: str,
     await db.commit()
     await db.refresh(formula)
     return formula
+
+
+async def get_project_logo(db: AsyncSession) -> ProjectLogo | None:
+    result = await db.execute(select(ProjectLogo).order_by(ProjectLogo.id.desc()).limit(1))
+    return result.scalar_one_or_none()
+
+
+async def set_project_logo(db: AsyncSession, image_url: str) -> ProjectLogo:
+    await db.execute(ProjectLogo.__table__.delete())
+    logo = ProjectLogo(image_url=image_url)
+    db.add(logo)
+    await db.commit()
+    await db.refresh(logo)
+    return logo
+
+
+async def delete_project_logo(db: AsyncSession) -> ProjectLogo | None:
+    logo = await get_project_logo(db)
+    if not logo:
+        return None
+    await db.delete(logo)
+    await db.commit()
+    return logo
 
 
 async def get_generated_formula_by_session(db: AsyncSession, session_id: str) -> GeneratedFormula | None:

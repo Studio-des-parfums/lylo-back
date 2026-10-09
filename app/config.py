@@ -75,10 +75,16 @@ class Settings(BaseSettings):
     # PrintNode
     printnode_api_key: str = ""
 
-    # Cloudinary
+    # Cloudinary (legacy, conservé pour les images déjà uploadées)
     cloudinary_cloud_name: str = ""
     cloudinary_api_key: str = ""
     cloudinary_api_secret: str = ""
+
+    # AWS S3 (bucket partagé avec sdp-dashboard, voir server/services/s3.ts)
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_s3_bucket: str = ""
+    aws_s3_region: str = "eu-west-3"
 
     @property
     def voice_mapping(self) -> dict[SupportedLanguage, dict[str, str]]:

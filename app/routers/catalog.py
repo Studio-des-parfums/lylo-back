@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.connection import get_db
 from app.database import crud
-from app.services import cloudinary_service, question_translation_service
+from app.services import cloudinary_service, question_translation_service, s3_service
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 
@@ -307,6 +307,8 @@ async def delete_choice(choice_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Choix introuvable")
     if choice.image_url and "cloudinary" in choice.image_url:
         cloudinary_service.delete_choice_image(choice.image_url)
+    elif choice.image_url:
+        s3_service.delete_choice_image(choice.image_url)
     if not await crud.delete_choice(db, choice_id):
         raise HTTPException(status_code=404, detail="Choix introuvable")
 
@@ -330,7 +332,7 @@ async def upload_choice_image(
         raise HTTPException(status_code=400, detail="Le fichier est vide")
 
     try:
-        image_url = cloudinary_service.upload_choice_image(choice_id, file_bytes, file.filename)
+        image_url = s3_service.upload_choice_image(choice_id, file_bytes, file.filename)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
