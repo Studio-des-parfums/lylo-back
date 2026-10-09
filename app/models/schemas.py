@@ -33,7 +33,7 @@ class SaveAnswerRequest(BaseModel):
 
 
 class SaveProfileRequest(BaseModel):
-    field: Literal["first_name", "last_name", "email", "phone", "gender", "age", "has_allergies", "allergies", "perfume_name"]
+    field: Literal["first_name", "last_name", "email", "phone", "gender", "age", "has_disliked_notes", "disliked_notes", "has_allergies", "allergies", "perfume_name"]
     value: str
 
 
@@ -71,6 +71,8 @@ class BatchGenerateRequest(BaseModel):
     brand: Literal["lylo", "ester"] = "lylo"
     gender: str
     age: str
+    has_disliked_notes: Literal["oui", "non"] = "non"
+    disliked_notes: str | None = None
     has_allergies: Literal["oui", "non"] = "non"
     allergies: str | None = None
     answers: list[BatchAnswerItem]
@@ -124,6 +126,8 @@ class MultiParticipant(BaseModel):
     color: str
     gender: str
     age: str
+    has_disliked_notes: Literal["oui", "non"] = "non"
+    disliked_notes: str | None = None
     has_allergies: Literal["oui", "non"] = "non"
     allergies: str | None = None
     pregnant: bool = False

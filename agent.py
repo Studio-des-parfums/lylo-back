@@ -68,6 +68,8 @@ class AgentPhase(Enum):
     GET_GENDER = auto()
     GET_AGE = auto()
     GET_PREGNANT = auto()
+    GET_DISLIKES = auto()
+    GET_DISLIKE_DETAIL = auto()
     GET_ALLERGIES = auto()
     GET_ALLERGY_DETAIL = auto()
     # Phase 2 — Questionnaire
@@ -250,6 +252,36 @@ def get_prompt(state: SessionState, config: dict, ai_name: str, lang: SupportedL
             mission = f"Естественно и деликатно спроси {first_name}, не беременна ли она или не кормит ли грудью, так как некоторые ароматические ингредиенты требуют предосторожности. Например: 'Чтобы гарантировать вам самую безопасную формулу — вы сейчас беременны или кормите грудью?' Как только она ответит, СРАЗУ вызови save_user_profile(field='pregnant', value='oui') или save_user_profile(field='pregnant', value='non')."
         else:
             mission = f"Demandez à {first_name} naturellement et avec délicatesse si elle est enceinte ou allaitante, car certains ingrédients demandent des précautions. Par exemple : 'Pour vous garantir la formule la plus sûre — êtes-vous actuellement enceinte ou allaitante ?' Dès qu'elle répond, appelez IMMÉDIATEMENT save_user_profile(field='pregnant', value='oui') ou save_user_profile(field='pregnant', value='non')."
+
+    elif phase == AgentPhase.GET_DISLIKES:
+        first_name = state.profile.get("first_name", "")
+        if is_en:
+            mission = f"Ask {first_name} naturally if there are any notes or scents they dislike and would prefer to avoid, for example: 'Is there any particular note or scent you don't like, that we should avoid?' — If NO: IMMEDIATELY call save_user_profile(field='has_disliked_notes', value='non'). — If YES: IMMEDIATELY call save_user_profile(field='has_disliked_notes', value='oui')."
+        elif lang == "es":
+            mission = f"Pregunte a {first_name} con naturalidad si hay alguna nota u olor que no le guste y que prefiera evitar, por ejemplo: '¿Hay alguna nota u olor en particular que no le guste, que debamos evitar?' — Si NO: llame INMEDIATAMENTE a save_user_profile(field='has_disliked_notes', value='non'). — Si SÍ: llame INMEDIATAMENTE a save_user_profile(field='has_disliked_notes', value='oui')."
+        elif lang == "de":
+            mission = f"Frage {first_name} natürlich, ob es bestimmte Noten oder Düfte gibt, die nicht gefallen und vermieden werden sollten, zum Beispiel: 'Gibt es eine bestimmte Note oder einen Duft, den Sie nicht mögen und den wir vermeiden sollten?' — Falls NEIN: rufe SOFORT save_user_profile(field='has_disliked_notes', value='non') auf. — Falls JA: rufe SOFORT save_user_profile(field='has_disliked_notes', value='oui') auf."
+        elif lang == "ar":
+            mission = f"اسأل {first_name} بشكل طبيعي عما إذا كانت هناك رائحة أو نفحة معينة لا يحبها ويفضل تجنبها، على سبيل المثال: 'هل هناك نفحة أو رائحة معينة لا تحبها ونحتاج إلى تجنبها؟' — إذا كانت الإجابة لا: استدعِ فورًا save_user_profile(field='has_disliked_notes', value='non'). — إذا كانت الإجابة نعم: استدعِ فورًا save_user_profile(field='has_disliked_notes', value='oui')."
+        elif lang == "ru":
+            mission = f"Естественно спроси {first_name}, есть ли какая-то нота или запах, который он(а) не любит и который лучше избегать, например: 'Есть ли какая-то конкретная нота или запах, который вам не нравится и который нам следует избегать?' — Если НЕТ: СРАЗУ вызови save_user_profile(field='has_disliked_notes', value='non'). — Если ДА: СРАЗУ вызови save_user_profile(field='has_disliked_notes', value='oui')."
+        else:
+            mission = f"Demandez à {first_name} naturellement s'il y a une note ou une odeur qu'il/elle n'aime pas et préférerait éviter, par exemple : 'Est-ce qu'il y a une note ou une odeur en particulier que vous n'aimez pas, qu'on devrait éviter ?' — Si NON : appelez IMMÉDIATEMENT save_user_profile(field='has_disliked_notes', value='non'). — Si OUI : appelez IMMÉDIATEMENT save_user_profile(field='has_disliked_notes', value='oui')."
+
+    elif phase == AgentPhase.GET_DISLIKE_DETAIL:
+        first_name = state.profile.get("first_name", "")
+        if is_en:
+            mission = f"Ask {first_name} which notes or scents they dislike, for example: 'Noted! Which notes or scents should we avoid?' As soon as they answer, IMMEDIATELY call save_user_profile(field='disliked_notes', value=<the notes mentioned>)."
+        elif lang == "es":
+            mission = f"Pregunte a {first_name} qué notas u olores no le gustan, por ejemplo: '¡Entendido! ¿Qué notas u olores debemos evitar?' En cuanto responda, llame INMEDIATAMENTE a save_user_profile(field='disliked_notes', value=<las notas mencionadas>)."
+        elif lang == "de":
+            mission = f"Frage {first_name}, welche Noten oder Düfte nicht gefallen, zum Beispiel: 'Verstanden! Welche Noten oder Düfte sollten wir vermeiden?' Sobald geantwortet wird, rufe SOFORT save_user_profile(field='disliked_notes', value=<die genannten Noten>) auf."
+        elif lang == "ar":
+            mission = f"اسأل {first_name} عن النفحات أو الروائح التي لا يحبها، على سبيل المثال: 'تمام! ما هي النفحات أو الروائح التي يجب أن نتجنبها؟' بمجرد أن يجيب، استدعِ فورًا save_user_profile(field='disliked_notes', value=<النفحات المذكورة>)."
+        elif lang == "ru":
+            mission = f"Спроси {first_name}, какие ноты или запахи ему(ей) не нравятся, например: 'Понятно! Какие ноты или запахи нам следует избегать?' Как только он(а) ответит, СРАЗУ вызови save_user_profile(field='disliked_notes', value=<указанные ноты>)."
+        else:
+            mission = f"Demandez à {first_name} quelles notes ou odeurs il/elle n'aime pas, par exemple : 'Entendu ! Quelles notes ou odeurs devrait-on éviter ?' Dès qu'il/elle répond, appelez IMMÉDIATEMENT save_user_profile(field='disliked_notes', value=<les notes mentionnées>)."
 
     elif phase == AgentPhase.GET_ALLERGIES:
         first_name = state.profile.get("first_name", "")
@@ -1340,7 +1372,7 @@ async def entrypoint(ctx: JobContext):
 
     @function_tool()
     async def save_user_profile(field: str, value: str):
-        """Saves a user profile field. Call immediately when user provides: first_name, gender, age, pregnant, has_allergies, or allergies. / Sauvegarde un champ du profil utilisateur. Appeler immédiatement quand l'utilisateur fournit : first_name, gender, age, pregnant, has_allergies ou allergies."""
+        """Saves a user profile field. Call immediately when user provides: first_name, gender, age, pregnant, has_disliked_notes, disliked_notes, has_allergies, or allergies. / Sauvegarde un champ du profil utilisateur. Appeler immédiatement quand l'utilisateur fournit : first_name, gender, age, pregnant, has_disliked_notes, disliked_notes, has_allergies ou allergies."""
         resp = await http.post(
             f"/api/session/{session_id}/save-profile",
             json={"field": field, "value": value},
@@ -1367,8 +1399,15 @@ async def entrypoint(ctx: JobContext):
             if state.profile.get("gender", "").lower() in ("féminin", "feminin", "female", "f"):
                 return await advance_to(AgentPhase.GET_PREGNANT)
             else:
-                return await advance_to(AgentPhase.GET_ALLERGIES)
+                return await advance_to(AgentPhase.GET_DISLIKES)
         elif field == "pregnant":
+            return await advance_to(AgentPhase.GET_DISLIKES)
+        elif field == "has_disliked_notes":
+            if value.lower() in ("oui", "yes"):
+                return await advance_to(AgentPhase.GET_DISLIKE_DETAIL)
+            else:
+                return await advance_to(AgentPhase.GET_ALLERGIES)
+        elif field == "disliked_notes":
             return await advance_to(AgentPhase.GET_ALLERGIES)
         elif field == "has_allergies":
             if value.lower() in ("oui", "yes"):

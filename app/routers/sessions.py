@@ -709,6 +709,8 @@ async def batch_generate_formulas(body: BatchGenerateRequest, background_tasks: 
             language=body.language,
             has_allergies=body.has_allergies,
             user_allergens_raw=body.allergies or "",
+            has_disliked_notes=body.has_disliked_notes,
+            user_dislikes_raw=body.disliked_notes or "",
             force_type=body.formula_type,
             perfume_name=body.perfume_name,
         )
@@ -744,6 +746,8 @@ async def multi_generate_formulas(body: MultiGenerateRequest, background_tasks: 
                 language=body.language,
                 has_allergies=participant.has_allergies,
                 user_allergens_raw=participant.allergies or "",
+                has_disliked_notes=participant.has_disliked_notes,
+                user_dislikes_raw=participant.disliked_notes or "",
                 force_type=participant.formula_type,
                 perfume_name=participant.perfume_name,
             )

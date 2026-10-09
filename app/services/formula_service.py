@@ -216,6 +216,28 @@ async def _load_boosters_with_fallback(language: str) -> list[dict]:
     return boosters or [_FALLBACK_BOOSTER]
 
 
+def _parse_comma_list(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    return [a.strip() for a in raw.replace(",", ";").split(";") if a.strip()]
+
+
+def _filter_disliked_ingredients(ingredients: list[dict], user_dislikes: list[str] | None) -> list[dict]:
+    """Retire durement du catalogue les ingrédients dont le nom correspond à une
+    note que l'utilisateur a explicitement dit ne pas aimer (ex. "cannelle").
+
+    Contrairement aux allergènes (simple instruction au LLM, voir
+    `_build_formula_system_user_prompts`), ce filtre est appliqué en code : une
+    préférence déclarée ne doit jamais dépendre du LLM pour être respectée."""
+    if not user_dislikes:
+        return ingredients
+    disliked_lower = [d.lower() for d in user_dislikes]
+    return [
+        i for i in ingredients
+        if not any(d in i["name"].lower() for d in disliked_lower)
+    ]
+
+
 # ── Appel LLM ────────────────────────────────────────────────────────
 
 def _format_ingredients_prompt(ingredients: list[dict], excluded_names: set[str]) -> tuple[str, str, str]:
@@ -832,10 +854,11 @@ async def generate_formulas(session_id: str, force_type: str | None = None) -> d
     profile = session_store.get_user_profile(session_id)
     has_allergies = profile.get("has_allergies", "non") if profile else "non"
     user_allergens_raw = profile.get("allergies", "") if profile else ""
+    has_disliked_notes = profile.get("has_disliked_notes", "non") if profile else "non"
+    user_dislikes_raw = profile.get("disliked_notes", "") if profile else ""
 
-    user_allergens = None
-    if has_allergies in ("oui", "yes") and user_allergens_raw:
-        user_allergens = [a.strip() for a in user_allergens_raw.replace(",", ";").split(";") if a.strip()]
+    user_allergens = _parse_comma_list(user_allergens_raw) if has_allergies in ("oui", "yes") else None
+    user_dislikes = _parse_comma_list(user_dislikes_raw) if has_disliked_notes in ("oui", "yes") else None
 
     # Les deux appels sont indépendants (endpoint/params différents) : on les lance
     # en parallèle plutôt qu'en série pour ne payer qu'une seule latence réseau.
@@ -844,6 +867,7 @@ async def generate_formulas(session_id: str, force_type: str | None = None) -> d
     )
     if not ingredients:
         return {"error": "Aucun ingrédient disponible en base de données", "formulas": []}
+    ingredients = _filter_disliked_ingredients(ingredients, user_dislikes)
 
     # Un seul appel LLM génère les 2 formules d'un coup (au lieu de 2 appels séquentiels) :
     # ça garantit nativement leur diversité et divise par 2 la latence de cette étape.
@@ -865,15 +889,16 @@ async def generate_formulas_stateless(
     language: str = "fr",
     has_allergies: str = "non",
     user_allergens_raw: str = "",
+    has_disliked_notes: str = "non",
+    user_dislikes_raw: str = "",
     force_type: str | None = None,
     perfume_name: str | None = None,
 ) -> dict:
     if not answers:
         return {"error": "Aucune réponse fournie", "formulas": []}
 
-    user_allergens = None
-    if has_allergies in ("oui", "yes") and user_allergens_raw:
-        user_allergens = [a.strip() for a in user_allergens_raw.replace(",", ";").split(";") if a.strip()]
+    user_allergens = _parse_comma_list(user_allergens_raw) if has_allergies in ("oui", "yes") else None
+    user_dislikes = _parse_comma_list(user_dislikes_raw) if has_disliked_notes in ("oui", "yes") else None
 
     # Les deux appels sont indépendants (endpoint/params différents) : on les lance
     # en parallèle plutôt qu'en série pour ne payer qu'une seule latence réseau.
@@ -882,6 +907,7 @@ async def generate_formulas_stateless(
     )
     if not ingredients:
         return {"error": "Aucun ingrédient disponible en base de données", "formulas": []}
+    ingredients = _filter_disliked_ingredients(ingredients, user_dislikes)
 
     # Un seul appel LLM génère les 2 formules d'un coup (au lieu de 2 appels séquentiels) :
     # ça garantit nativement leur diversité et divise par 2 la latence de cette étape.
@@ -925,10 +951,11 @@ async def change_selected_formula_type(session_id: str, formula_type: str) -> di
     profile = session_store.get_user_profile(session_id)
     has_allergies = profile.get("has_allergies", "non") if profile else "non"
     user_allergens_raw = profile.get("allergies", "") if profile else ""
+    has_disliked_notes = profile.get("has_disliked_notes", "non") if profile else "non"
+    user_dislikes_raw = profile.get("disliked_notes", "") if profile else ""
 
-    user_allergens = None
-    if has_allergies in ("oui", "yes") and user_allergens_raw:
-        user_allergens = [a.strip() for a in user_allergens_raw.replace(",", ";").split(";") if a.strip()]
+    user_allergens = _parse_comma_list(user_allergens_raw) if has_allergies in ("oui", "yes") else None
+    user_dislikes = _parse_comma_list(user_dislikes_raw) if has_disliked_notes in ("oui", "yes") else None
 
     # Les deux appels sont indépendants (endpoint/params différents) : on les lance
     # en parallèle plutôt qu'en série pour ne payer qu'une seule latence réseau.
@@ -937,6 +964,7 @@ async def change_selected_formula_type(session_id: str, formula_type: str) -> di
     )
     if not ingredients:
         return {"error": "Aucun ingrédient disponible en base de données"}
+    ingredients = _filter_disliked_ingredients(ingredients, user_dislikes)
 
     formula = await _build_formula(
         session_data["answers"], ingredients, boosters, user_allergens,
@@ -959,12 +987,14 @@ async def get_available_ingredients(session_id: str, note_type: str) -> dict:
     profile = session_store.get_user_profile(session_id)
     has_allergies = profile.get("has_allergies", "non") if profile else "non"
     user_allergens_raw = profile.get("allergies", "") if profile else ""
+    has_disliked_notes = profile.get("has_disliked_notes", "non") if profile else "non"
+    user_dislikes_raw = profile.get("disliked_notes", "") if profile else ""
 
-    user_allergens = None
-    if has_allergies in ("oui", "yes") and user_allergens_raw:
-        user_allergens = [a.strip() for a in user_allergens_raw.replace(",", ";").split(";") if a.strip()]
+    user_allergens = _parse_comma_list(user_allergens_raw) if has_allergies in ("oui", "yes") else None
+    user_dislikes = _parse_comma_list(user_dislikes_raw) if has_disliked_notes in ("oui", "yes") else None
 
     ingredients = await _load_ingredients_from_db(language)
+    ingredients = _filter_disliked_ingredients(ingredients, user_dislikes)
 
     selected = session_store.get_selected_formula(session_id)
     already_in_formula: set[str] = set()
