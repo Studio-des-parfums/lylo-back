@@ -1,7 +1,7 @@
 script:pre-request {
   const envName = bru.getEnvName ? bru.getEnvName() : null;
   const processPort = (bru.getProcessEnv ? bru.getProcessEnv('PORT') : null) || (typeof process !== 'undefined' && process.env && process.env.PORT);
-  const defaultPort = '8080';
+  const defaultPort = '8000';
   const port = processPort || defaultPort;
 
   if (!envName || envName === 'local') {
@@ -16,5 +16,5 @@ script:pre-request {
   }
 }
 vars:pre-request {
-  baseUrl: http://localhost:8080
+  baseUrl: http://localhost:8000
 }
