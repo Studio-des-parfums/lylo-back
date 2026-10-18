@@ -1,0 +1,20 @@
+meta {
+  name: Get Team Member By ID
+  type: http
+  seq: 2
+  tags: [
+    mutation
+  ]
+}
+
+get {
+  url: {{baseUrl}}/teams/{{createdTeamMemberId}}
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: eq {{createdTeamMemberId}}
+  res.body.first_name: eq TeamBruno
+}

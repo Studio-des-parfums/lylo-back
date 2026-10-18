@@ -1,0 +1,20 @@
+script:pre-request {
+  const envName = bru.getEnvName ? bru.getEnvName() : null;
+  const processPort = (bru.getProcessEnv ? bru.getProcessEnv('PORT') : null) || (typeof process !== 'undefined' && process.env && process.env.PORT);
+  const defaultPort = '8080';
+  const port = processPort || defaultPort;
+
+  if (!envName || envName === 'local') {
+    bru.setVar('baseUrl', 'http://localhost:' + port);
+  } else if (envName === 'prod') {
+    const processServerUrl = (bru.getProcessEnv ? bru.getProcessEnv('SERVER_URL') : null) || (typeof process !== 'undefined' && process.env && process.env.SERVER_URL);
+    const defaultServerUrl = 'https://lylo-back-production.up.railway.app';
+    let base = bru.getEnvVar('baseUrl');
+    if (!base || base.includes('process.env') || base === '') {
+      bru.setVar('baseUrl', processServerUrl || defaultServerUrl);
+    }
+  }
+}
+vars:pre-request {
+  baseUrl: http://localhost:8080
+}

@@ -1,0 +1,20 @@
+meta {
+  name: List Languages
+  type: http
+  seq: 1
+  tags: [
+    readonly
+  ]
+}
+
+get {
+  url: {{baseUrl}}/api/languages
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body.languages: isDefined
+  res.body.languages.length: gte 1
+}

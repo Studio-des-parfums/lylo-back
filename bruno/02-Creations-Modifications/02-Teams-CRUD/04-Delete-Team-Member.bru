@@ -1,0 +1,18 @@
+meta {
+  name: Delete Team Member
+  type: http
+  seq: 4
+  tags: [
+    mutation
+  ]
+}
+
+delete {
+  url: {{baseUrl}}/teams/{{createdTeamMemberId}}
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 204
+}

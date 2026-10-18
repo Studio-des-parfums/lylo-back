@@ -1,0 +1,35 @@
+meta {
+  name: Create Participant
+  type: http
+  seq: 1
+  tags: [
+    mutation
+  ]
+}
+
+post {
+  url: {{baseUrl}}/participants/
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "first_name": "PartBruno",
+    "last_name": "TestAuto",
+    "email": "bruno.part.{{$timestamp}}@example.com",
+    "phone": "0600000003"
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isNumber
+  res.body.first_name: eq PartBruno
+}
+
+script:post-response {
+  if (res.body && res.body.id) {
+    bru.setVar("createdParticipantId", res.body.id);
+  }
+}

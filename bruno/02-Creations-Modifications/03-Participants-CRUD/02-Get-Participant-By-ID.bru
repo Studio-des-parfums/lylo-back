@@ -1,0 +1,20 @@
+meta {
+  name: Get Participant By ID
+  type: http
+  seq: 2
+  tags: [
+    mutation
+  ]
+}
+
+get {
+  url: {{baseUrl}}/participants/{{createdParticipantId}}
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: eq {{createdParticipantId}}
+  res.body.first_name: eq PartBruno
+}

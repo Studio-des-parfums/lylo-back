@@ -1,0 +1,18 @@
+meta {
+  name: Speedtest
+  type: http
+  seq: 2
+  tags: [
+    readonly
+  ]
+}
+
+get {
+  url: {{baseUrl}}/api/speedtest
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}

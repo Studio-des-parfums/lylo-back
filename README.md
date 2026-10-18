@@ -93,3 +93,52 @@ docker run --env-file .env lilo-backend python agent.py start
 | `VOICE_EN_FEMALE` | ID voix Cartesia EN feminine |
 | `VOICE_EN_MALE` | ID voix Cartesia EN masculine |
 | `BACKEND_URL` | URL du backend API (defaut: `http://localhost:8000`) |
+
+---
+
+## Tests Automatisés d’API avec Bruno (`/bruno`)
+
+Une suite complète de 24 requêtes et 56 assertions automatisées couvre l'intégralité des routes de l'API.
+
+Organisation des dossiers :
+- `01-Consultation/` (14 requêtes) : **Lecture seule** (GET ping, speedtest, langues, catalogue questions/groupes/ingrédients, formules, sessions, branding, équipes, participants, imprimantes, clients). Garanti 0 écriture en base, 100 % sécurisé pour tester la **Production** ou le Local.
+- `02-Creations-Modifications/` (10 requêtes) : **Cycles CRUD et mutations** (POST, PATCH, DELETE pour clients, membres d'équipe, participants).
+- `03-Tous-Les-Tests/` (24 requêtes) : **Suite complète** regroupant l'ensemble des modules (Consultation + CRUD).
+
+> ⚠️ **IMPORTANT — Nettoyage de la base de données :**
+> Lorsque vous exécutez le dossier **`02-Creations-Modifications`** ou **`03-Tous-Les-Tests`**, des enregistrements de test temporaires peuvent être créés en base (`*Bruno*`).
+> **Il faut impérativement exécuter le script de nettoyage après chaque exécution du dossier 02 ou 03 :**
+> ```bash
+> python scripts/cleanup_test_data.py
+> ```
+
+### Commandes d'exécution rapide (CLI)
+
+1. **Tester la Production en toute sécurité (0 écriture) :**
+```bash
+cd bruno
+bru run 01-Consultation -r --env prod
+```
+
+2. **Tester le Local en consultation seule :**
+```bash
+cd bruno
+bru run 01-Consultation -r --env local
+```
+
+3. **Exécuter la suite complète en Local :**
+```bash
+cd bruno
+bru run 03-Tous-Les-Tests -r --env local
+# Toujours nettoyer la base après :
+python ../scripts/cleanup_test_data.py
+```
+
+4. **Exécuter uniquement les mutations CRUD en Local :**
+```bash
+cd bruno
+bru run 02-Creations-Modifications -r --env local
+# Toujours nettoyer la base après :
+python ../scripts/cleanup_test_data.py
+```
+

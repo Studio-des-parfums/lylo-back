@@ -1,0 +1,20 @@
+meta {
+  name: List Ingredients
+  type: http
+  seq: 3
+  tags: [
+    readonly
+  ]
+}
+
+get {
+  url: {{baseUrl}}/catalog/ingredients
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body: isDefined
+  res.body.length: gte 0
+}

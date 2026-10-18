@@ -1,0 +1,20 @@
+meta {
+  name: List Question Groups
+  type: http
+  seq: 2
+  tags: [
+    readonly
+  ]
+}
+
+get {
+  url: {{baseUrl}}/catalog/question-groups
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body: isDefined
+  res.body.length: gte 0
+}

@@ -1,0 +1,35 @@
+meta {
+  name: Create Team Member
+  type: http
+  seq: 1
+  tags: [
+    mutation
+  ]
+}
+
+post {
+  url: {{baseUrl}}/teams/
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "first_name": "TeamBruno",
+    "last_name": "TestAuto",
+    "email": "bruno.team.{{$timestamp}}@example.com",
+    "phone": "0600000002"
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isNumber
+  res.body.first_name: eq TeamBruno
+}
+
+script:post-response {
+  if (res.body && res.body.id) {
+    bru.setVar("createdTeamMemberId", res.body.id);
+  }
+}

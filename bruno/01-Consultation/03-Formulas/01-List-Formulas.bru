@@ -1,0 +1,20 @@
+meta {
+  name: List Formulas
+  type: http
+  seq: 1
+  tags: [
+    readonly
+  ]
+}
+
+get {
+  url: {{baseUrl}}/api/formulas
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body.results: isDefined
+  res.body.total: isNumber
+}

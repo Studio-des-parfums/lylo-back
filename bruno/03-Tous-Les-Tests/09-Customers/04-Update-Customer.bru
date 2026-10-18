@@ -1,0 +1,27 @@
+meta {
+  name: Update Customer
+  type: http
+  seq: 4
+  tags: [
+    mutation
+  ]
+}
+
+patch {
+  url: {{baseUrl}}/customers/{{createdCustomerId}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "first_name": "TestBrunoUpdated",
+    "sessions_available": 10
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: eq {{createdCustomerId}}
+  res.body.first_name: eq TestBrunoUpdated
+}

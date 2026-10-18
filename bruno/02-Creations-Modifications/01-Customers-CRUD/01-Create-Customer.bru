@@ -1,0 +1,37 @@
+meta {
+  name: Create Customer
+  type: http
+  seq: 1
+  tags: [
+    mutation
+  ]
+}
+
+post {
+  url: {{baseUrl}}/customers/
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "first_name": "TestBruno",
+    "last_name": "LyloAuto",
+    "email": "bruno.lylo.{{$timestamp}}@example.com",
+    "phone": "0600000001",
+    "days_available": 30,
+    "sessions_available": 5
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isNumber
+  res.body.first_name: eq TestBruno
+}
+
+script:post-response {
+  if (res.body && res.body.id) {
+    bru.setVar("createdCustomerId", res.body.id);
+  }
+}

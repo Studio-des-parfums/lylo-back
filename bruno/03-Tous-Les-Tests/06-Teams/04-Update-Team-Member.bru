@@ -1,0 +1,26 @@
+meta {
+  name: Update Team Member
+  type: http
+  seq: 4
+  tags: [
+    mutation
+  ]
+}
+
+patch {
+  url: {{baseUrl}}/teams/{{createdTeamMemberId}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "first_name": "TeamBrunoUpdated"
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: eq {{createdTeamMemberId}}
+  res.body.first_name: eq TeamBrunoUpdated
+}

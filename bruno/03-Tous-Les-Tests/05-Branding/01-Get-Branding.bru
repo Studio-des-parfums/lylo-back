@@ -1,0 +1,19 @@
+meta {
+  name: Get Branding
+  type: http
+  seq: 1
+  tags: [
+    readonly
+  ]
+}
+
+get {
+  url: {{baseUrl}}/branding
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body: isDefined
+}

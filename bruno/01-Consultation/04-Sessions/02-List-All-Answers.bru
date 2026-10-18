@@ -1,0 +1,19 @@
+meta {
+  name: List All Answers
+  type: http
+  seq: 2
+  tags: [
+    readonly
+  ]
+}
+
+get {
+  url: {{baseUrl}}/api/sessions/all-answers
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body: isDefined
+}

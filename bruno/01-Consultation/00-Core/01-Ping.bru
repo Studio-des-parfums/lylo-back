@@ -1,0 +1,18 @@
+meta {
+  name: Ping
+  type: http
+  seq: 1
+  tags: [
+    readonly
+  ]
+}
+
+get {
+  url: {{baseUrl}}/api/ping
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}

@@ -1,0 +1,11 @@
+{
+  "version": "1",
+  "name": "Lylo API",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git",
+    "venv",
+    "__pycache__"
+  ]
+}
