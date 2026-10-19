@@ -1,3 +1,4 @@
+from datetime import date as date_type
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -159,3 +160,86 @@ class SaveMultiFormulaRequest(BaseModel):
 class PrintMultiFormulaRequest(BaseModel):
     location: str
     formulas: list[dict]
+
+
+# --- Analytics Schemas ---
+
+class CountPeriodItem(BaseModel):
+    period: str
+    count: int
+
+
+class FormulaCountResponse(BaseModel):
+    total: int
+    group_by: str
+    date_from: date_type | None = None
+    date_to: date_type | None = None
+    data: list[CountPeriodItem]
+
+
+class TopNoteItem(BaseModel):
+    note: str
+    category: str | None = None
+    count: int
+    percentage: float
+
+
+class TopNotesResponse(BaseModel):
+    total_formulas: int
+    category: str
+    limit: int
+    data: list[TopNoteItem]
+
+
+class ProfileStatItem(BaseModel):
+    profile: str
+    count: int
+    percentage: float
+
+
+class ProfilesResponse(BaseModel):
+    total: int
+    data: list[ProfileStatItem]
+
+
+class LanguageStatItem(BaseModel):
+    language: str
+    count: int
+    percentage: float
+
+
+class LanguagesResponse(BaseModel):
+    total: int
+    data: list[LanguageStatItem]
+
+
+class ModeStatItem(BaseModel):
+    mode: str
+    count: int
+    percentage: float
+
+
+class ModesResponse(BaseModel):
+    total: int
+    data: list[ModeStatItem]
+
+
+class FormulaTypeStatItem(BaseModel):
+    formula_type: str
+    count: int
+    percentage: float
+
+
+class FormulaTypesResponse(BaseModel):
+    total: int
+    data: list[FormulaTypeStatItem]
+
+
+class AnalyticsSummaryResponse(BaseModel):
+    total_formulas: int
+    profiles: list[ProfileStatItem]
+    modes: list[ModeStatItem]
+    top_notes: list[TopNoteItem]
+    formula_types: list[FormulaTypeStatItem]
+    languages: list[LanguageStatItem] | None = None
+

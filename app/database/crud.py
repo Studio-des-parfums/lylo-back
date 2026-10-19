@@ -19,6 +19,7 @@ from app.database.models import (
     QuestionGroup,
     TeamMember,
 )
+from app.core.cache import analytics_cache
 
 
 MAX_QUESTIONS_PER_GROUP = 12
@@ -241,6 +242,7 @@ async def create_generated_formula(
                 raise
             continue
         await db.refresh(formula)
+        analytics_cache.clear()
         return formula
 
 
@@ -272,6 +274,7 @@ async def update_generated_formula_by_session(db: AsyncSession, session_id: str,
         setattr(formula, field, value)
     await db.commit()
     await db.refresh(formula)
+    analytics_cache.clear()
     return formula
 
 
@@ -633,3 +636,16 @@ async def delete_ingredient(db: AsyncSession, ingredient_id: int) -> bool:
     await db.delete(ingredient)
     await db.commit()
     return True
+
+
+# --- Analytics CRUD ---
+from app.database.crud_analytics import (  # noqa: E402
+    get_formula_counts,
+    get_top_notes,
+    get_profile_stats,
+    get_language_stats,
+    get_mode_stats,
+    get_formula_type_stats,
+    get_analytics_summary,
+)
+
