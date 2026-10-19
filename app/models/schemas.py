@@ -98,6 +98,7 @@ class SaveFormulaRequest(BaseModel):
     customer_email: str | None = None
     participant_id: int | None = None
     language: SupportedLanguage = "fr"
+    input_mode: str = "quiz"
 
 
 class StartMoodboardsRequest(BaseModel):
