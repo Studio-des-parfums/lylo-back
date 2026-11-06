@@ -16,12 +16,24 @@ def _client():
         region_name=settings.aws_s3_region,
         aws_access_key_id=settings.aws_access_key_id,
         aws_secret_access_key=settings.aws_secret_access_key,
+        endpoint_url=settings.aws_s3_endpoint or None,
     )
 
 
 def _public_url(key: str) -> str:
     settings = get_settings()
+    if settings.aws_s3_public_url:
+        return f"{settings.aws_s3_public_url.rstrip('/')}/{key}"
     return f"https://{settings.aws_s3_bucket}.s3.{settings.aws_s3_region}.amazonaws.com/{key}"
+
+
+def _key_from_url(image_url: str, prefix: str) -> str | None:
+    """Clé d'un fichier à partir de son URL publique (ancienne URL S3 ou nouvelle URL R2)."""
+    marker = f"/{prefix}"
+    index = image_url.find(marker)
+    if index == -1:
+        return None
+    return image_url[index + 1:]
 
 
 def _upload(key: str, file_bytes: bytes, content_type: str | None) -> str:
@@ -64,10 +76,9 @@ def upload_choice_image(choice_id: int, file_bytes: bytes, filename: str | None 
 
 def delete_choice_image(image_url: str) -> None:
     """Supprime une image de choix S3 à partir de son URL publique."""
-    prefix = _public_url(CHOICES_PREFIX)
-    if not image_url.startswith(prefix):
+    key = _key_from_url(image_url, CHOICES_PREFIX)
+    if not key:
         return
-    key = f"{CHOICES_PREFIX}{image_url[len(prefix):]}"
     _delete(key)
 
 
@@ -88,10 +99,9 @@ def upload_project_logo(file_bytes: bytes, filename: str | None, content_type: s
 
 def delete_project_logo(image_url: str) -> None:
     """Supprime le logo secondaire du projet sur S3 à partir de son URL publique."""
-    prefix = _public_url(BRANDING_PREFIX)
-    if not image_url.startswith(prefix):
+    key = _key_from_url(image_url, BRANDING_PREFIX)
+    if not key:
         return
-    key = f"{BRANDING_PREFIX}{image_url[len(prefix):]}"
     _delete(key)
 
 

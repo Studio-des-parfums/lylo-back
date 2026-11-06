@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     aws_secret_access_key: str = ""
     aws_s3_bucket: str = ""
     aws_s3_region: str = "eu-west-3"
+    # Cloudflare R2 : endpoint du compte (région "auto") et URL publique du bucket
+    # (domaine personnalisé, ex. https://files.lylo-ai.com). Vides = AWS S3.
+    aws_s3_endpoint: str = ""
+    aws_s3_public_url: str = ""
 
     @property
     def voice_mapping(self) -> dict[SupportedLanguage, dict[str, str]]:
