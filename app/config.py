@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.languages import SUPPORTED_LANGUAGES, SupportedLanguage
@@ -80,15 +81,16 @@ class Settings(BaseSettings):
     cloudinary_api_key: str = ""
     cloudinary_api_secret: str = ""
 
-    # AWS S3 (bucket partagé avec sdp-dashboard, voir server/services/s3.ts)
-    aws_access_key_id: str = ""
-    aws_secret_access_key: str = ""
-    aws_s3_bucket: str = ""
-    aws_s3_region: str = "eu-west-3"
+    # Stockage de fichiers compatible S3 (Cloudflare R2, bucket lylo)
+    aws_access_key_id: str = Field("", validation_alias=AliasChoices("STORAGE_ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID"))
+    aws_secret_access_key: str = Field("", validation_alias=AliasChoices("STORAGE_SECRET_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY"))
+    aws_s3_bucket: str = Field("", validation_alias=AliasChoices("STORAGE_BUCKET", "AWS_S3_BUCKET"))
+    aws_s3_region: str = Field("eu-west-3", validation_alias=AliasChoices("STORAGE_REGION", "AWS_S3_REGION"))
     # Cloudflare R2 : endpoint du compte (région "auto"). aws_s3_public_url = base des URL
     # publiques, ex. https://<ce backend>/files (bucket privé, voir routers/files.py). Vides = AWS S3.
-    aws_s3_endpoint: str = ""
-    aws_s3_public_url: str = ""
+    # Variables STORAGE_*, avec repli sur les anciens noms AWS_* le temps de la transition.
+    aws_s3_endpoint: str = Field("", validation_alias=AliasChoices("STORAGE_ENDPOINT", "AWS_S3_ENDPOINT"))
+    aws_s3_public_url: str = Field("", validation_alias=AliasChoices("STORAGE_PUBLIC_URL", "AWS_S3_PUBLIC_URL"))
 
     @property
     def voice_mapping(self) -> dict[SupportedLanguage, dict[str, str]]:
