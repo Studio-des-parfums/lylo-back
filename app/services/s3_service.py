@@ -36,6 +36,22 @@ def _key_from_url(image_url: str, prefix: str) -> str | None:
     return image_url[index + 1:]
 
 
+PUBLIC_PREFIXES = (CHOICES_PREFIX, MOODBOARDS_PREFIX, BRANDING_PREFIX)
+PUBLIC_FILE_URL_TTL_SECONDS = 3600
+
+
+def public_file_signed_url(key: str) -> str | None:
+    """URL signée d'une image publique Lylo (préfixes autorisés uniquement), sinon None."""
+    if ".." in key or not key.startswith(PUBLIC_PREFIXES):
+        return None
+    settings = get_settings()
+    return _client().generate_presigned_url(
+        "get_object",
+        Params={"Bucket": settings.aws_s3_bucket, "Key": key},
+        ExpiresIn=PUBLIC_FILE_URL_TTL_SECONDS,
+    )
+
+
 def _upload(key: str, file_bytes: bytes, content_type: str | None) -> str:
     settings = get_settings()
     if not settings.aws_access_key_id or not settings.aws_secret_access_key or not settings.aws_s3_bucket:
