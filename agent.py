@@ -305,9 +305,15 @@ async def entrypoint(ctx: JobContext):
             })
         return await advance_to(phase)
 
+    def _choice_labels(question_id: int) -> list[str]:
+        q = next((qq for qq in config["questions"] if qq["id"] == question_id), None)
+        return [c["label"] if isinstance(c, dict) else c for c in (q or {}).get("choices", [])]
+
     async def _notify_top_2_now(question_id: int, top_2: list[str]) -> str:
         """Logique commune à l'outil notify_top_2 et au clic utilisateur (_handle_top_2_clicked) :
         enregistre les choix « le plus », notifie le frontend, passe à l'étape suivante."""
+        # Numéro (« 4 ») ou libellé approximatif → libellé exact (sinon le front ne masque pas la carte)
+        top_2 = flow.resolve_choices(top_2, _choice_labels(question_id))
         state.current_top_2 = top_2
         logger.info(f"[Q] top_2 q={question_id} top_2={top_2}")
         await send_state_update({
@@ -325,6 +331,12 @@ async def entrypoint(ctx: JobContext):
 
     async def _notify_bottom_2_now(question_id: int, bottom_2: list[str]) -> str:
         """Logique commune à l'outil notify_bottom_2 et au clic utilisateur (_handle_bottom_2_clicked)."""
+        bottom_2 = flow.resolve_choices(bottom_2, _choice_labels(question_id))
+        overlap = [c for c in bottom_2 if c in state.current_top_2]
+        if overlap:
+            logger.warning(f"[Q] bottom_2 refusé, déjà choisi en top_2 : {overlap}")
+            return (f"[rejected] {overlap} already chosen as {answer_fmt.positive_label}. "
+                    "Do not record it. Briefly ask again among the remaining choices only.")
         state.current_bottom_2 = bottom_2
         logger.info(f"[Q] bottom_2 q={question_id} bottom_2={bottom_2}")
         await send_state_update({
@@ -846,14 +858,19 @@ async def entrypoint(ctx: JobContext):
             elif msg_type == "questionnaire_top_2":
                 question_id = msg.get("question_id")
                 values = msg.get("values") or []
-                if question_id is not None and len(values) == 2:
+                # Nombre attendu = format du questionnaire (1 pour Help, 2 pour Lylo…)
+                if question_id is not None and len(values) == answer_fmt.positive_count:
                     asyncio.ensure_future(_handle_top_2_clicked(question_id, values))
+                else:
+                    logger.warning(f"[CLICK] top_2 ignoré : {len(values)} valeur(s), attendu {answer_fmt.positive_count}")
 
             elif msg_type == "questionnaire_bottom_2":
                 question_id = msg.get("question_id")
                 values = msg.get("values") or []
-                if question_id is not None and len(values) == 2:
+                if question_id is not None and len(values) == answer_fmt.negative_count:
                     asyncio.ensure_future(_handle_bottom_2_clicked(question_id, values))
+                else:
+                    logger.warning(f"[CLICK] bottom_2 ignoré : {len(values)} valeur(s), attendu {answer_fmt.negative_count}")
 
         except Exception as e:
             logger.error(f"[DATA_RECEIVED] Erreur traitement message: {e}")

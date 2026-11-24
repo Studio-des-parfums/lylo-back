@@ -67,3 +67,14 @@ def test_labels_resolved_per_language_with_fallbacks():
     assert answer_format_of(group, "en")["positive_label"] == "Describes me best"
     assert answer_format_of(group, "de")["positive_label"] == "Me représente le plus"  # repli fr
     assert answer_format_of(group, "en")["negative_label"] == "Your least favorites"   # défaut
+
+
+def test_resolve_choices_numbers_and_fuzzy():
+    from app.agent.questionnaire_flow import resolve_choices
+    labels = ["Vous êtes d'une efficacité redoutable", "Vous avez des idées que personne n'a",
+              "On peut toujours compter sur vous", "Vous êtes toujours calme"]
+    assert resolve_choices(["4"], labels) == [labels[3]]
+    assert resolve_choices(["le choix numéro 2"], labels) == [labels[1]]
+    assert resolve_choices(["le quatre"], labels) == [labels[3]]
+    assert resolve_choices(["Vous savez des idées que personne n'a"], labels) == [labels[1]]
+    assert resolve_choices(["on peut toujours compter sur vous"], labels) == [labels[2]]
