@@ -58,7 +58,7 @@ async def _load_questions_from_db(language: str, count: int, brand: str) -> tupl
                 for c in choices
             ],
         })
-    return result, answer_format_of(selected_group)
+    return result, answer_format_of(selected_group, language)
 
 
 async def create_session(

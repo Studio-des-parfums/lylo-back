@@ -103,7 +103,8 @@ class QuestionGroup(Base):
     )
     is_active = Column(Boolean, default=True)
     # Format de réponse (cf. app/core/answer_format.py)
-    framing = Column(String(20), nullable=False, default="preference", server_default="preference")
+    positive_label = Column(JSON, nullable=True)  # {langue: libellé}, NULL = défaut
+    negative_label = Column(JSON, nullable=True)
     positive_count = Column(Integer, nullable=False, default=2, server_default="2")
     positive_justify = Column(Boolean, nullable=False, default=True, server_default="true")
     negative_count = Column(Integer, nullable=False, default=2, server_default="2")

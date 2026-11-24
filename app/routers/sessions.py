@@ -201,7 +201,8 @@ async def save_answer(session_id: str, body: SaveAnswerRequest):
         question_text=body.question_text,
         top_2=top_2,
         bottom_2=bottom_2,
-        framing=((meta or {}).get("answer_format") or {}).get("framing", "preference"),
+        positive_label=((meta or {}).get("answer_format") or {}).get("positive_label"),
+        negative_label=((meta or {}).get("answer_format") or {}).get("negative_label"),
     )
     return {"status": "ok"}
 
@@ -499,7 +500,7 @@ async def get_questions(
     return {
         "group_id": selected_group.id,
         "group_name": selected_group.name,
-        "answer_format": answer_format_of(selected_group),
+        "answer_format": answer_format_of(selected_group, language),
         "questions": [
             {
                 "id": q.id,
@@ -713,7 +714,8 @@ async def batch_generate_formulas(body: BatchGenerateRequest, background_tasks: 
             "question": a.question_text,
             "top_2": a.top_2,
             "bottom_2": a.bottom_2,
-            "framing": a.framing,
+            "positive_label": a.positive_label,
+            "negative_label": a.negative_label,
         }
         for a in body.answers
     }
@@ -751,7 +753,8 @@ async def multi_generate_formulas(body: MultiGenerateRequest, background_tasks: 
                 "question": a.question_text,
                 "top_2": a.top_2,
                 "bottom_2": a.bottom_2,
-            "framing": a.framing,
+            "positive_label": a.positive_label,
+            "negative_label": a.negative_label,
             }
             for a in participant.answers
         }

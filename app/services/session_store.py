@@ -83,13 +83,15 @@ def save_answer(
     question_text: str,
     top_2: list[str],
     bottom_2: list[str],
-    framing: str = "preference",
+    positive_label: str | None = None,
+    negative_label: str | None = None,
 ) -> None:
     with _lock:
         if session_id not in _answers:
             _answers[session_id] = {}
         _answers[session_id][str(question_id)] = {
-            "framing": framing,
+            "positive_label": positive_label,
+            "negative_label": negative_label,
             "question": question_text,
             "top_2": top_2,
             "bottom_2": bottom_2,

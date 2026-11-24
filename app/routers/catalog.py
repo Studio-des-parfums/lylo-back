@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.answer_format import AnswerFormat, Framing
+from app.core.answer_format import LabelTranslations
 from app.core.brands import DEFAULT_BRAND, BrandSlug
 from app.database.connection import get_db
 from app.database import crud
@@ -75,7 +75,18 @@ class QuestionResponse(BaseModel):
         from_attributes = True
 
 
-class QuestionGroupCreate(AnswerFormat):
+class _AnswerFormatFields(BaseModel):
+    """Format de réponse (cf. app/core/answer_format.py). Libellés saisis en français,
+    traduits automatiquement ; vide = libellé par défaut."""
+    positive_label: str | None = Field(None, max_length=120)
+    negative_label: str | None = Field(None, max_length=120)
+    positive_count: int = Field(2, ge=1, le=3)
+    positive_justify: bool = True
+    negative_count: int = Field(2, ge=0, le=3)
+    negative_justify: bool = True
+
+
+class QuestionGroupCreate(_AnswerFormatFields):
     name: str
     brand: BrandSlug = DEFAULT_BRAND
     # Activer un groupe désactive automatiquement les autres groupes de la même marque.
@@ -86,7 +97,8 @@ class QuestionGroupUpdate(BaseModel):
     name: str | None = None
     brand: BrandSlug | None = None
     is_active: bool | None = None
-    framing: Framing | None = None
+    positive_label: str | None = Field(None, max_length=120)  # "" = revenir au défaut
+    negative_label: str | None = Field(None, max_length=120)
     positive_count: int | None = Field(None, ge=1, le=3)
     positive_justify: bool | None = None
     negative_count: int | None = Field(None, ge=0, le=3)
@@ -103,11 +115,17 @@ class QuestionMiniResponse(BaseModel):
         from_attributes = True
 
 
-class QuestionGroupResponse(AnswerFormat):
+class QuestionGroupResponse(BaseModel):
     id: int
     name: str
     brand: str
     is_active: bool
+    positive_label: LabelTranslations | None = None
+    negative_label: LabelTranslations | None = None
+    positive_count: int
+    positive_justify: bool
+    negative_count: int
+    negative_justify: bool
     questions: list[QuestionMiniResponse] = Field(default_factory=list)
 
     class Config:
@@ -297,11 +315,22 @@ async def get_question_group(group_id: int, db: AsyncSession = Depends(get_db)):
     return group
 
 
+async def _translated_labels(fields: dict) -> dict:
+    """Remplace les libellés saisis (français) par {langue: traduction} ; "" → None (défaut)."""
+    for key in ("positive_label", "negative_label"):
+        if key not in fields:
+            continue
+        text = (fields[key] or "").strip()
+        fields[key] = {"fr": text, **await question_translation_service.translate_text(text)} if text else None
+    return fields
+
+
 @router.post("/question-groups", response_model=QuestionGroupResponse, status_code=201)
 async def create_question_group(body: QuestionGroupCreate, db: AsyncSession = Depends(get_db)):
     await _ensure_brand_exists(db, body.brand)
+    fields = await _translated_labels(body.model_dump())
     try:
-        return await crud.create_question_group(db, **body.model_dump())
+        return await crud.create_question_group(db, **fields)
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Un questionnaire porte déjà ce nom pour cette marque")
@@ -310,8 +339,9 @@ async def create_question_group(body: QuestionGroupCreate, db: AsyncSession = De
 @router.patch("/question-groups/{group_id}", response_model=QuestionGroupResponse)
 async def update_question_group(group_id: int, body: QuestionGroupUpdate, db: AsyncSession = Depends(get_db)):
     await _ensure_brand_exists(db, body.brand)
+    fields = await _translated_labels(body.model_dump(exclude_none=True))
     try:
-        updated = await crud.update_question_group(db, group_id, **body.model_dump(exclude_none=True))
+        updated = await crud.update_question_group(db, group_id, **fields)
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Un questionnaire porte déjà ce nom pour cette marque")

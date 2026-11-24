@@ -48,6 +48,9 @@ async def _translate_texts(texts: list[str]) -> list[dict[SupportedLanguage, str
 Traduis chaque texte numéroté vers les langues suivantes : {", ".join(f"{code} ({label})" for code, label in lang_labels.items())}.
 Garde un ton et une longueur similaires à l'original. Ne traduis pas littéralement au mot à
 mot si une formulation plus naturelle existe dans la langue cible.
+Conserve la personne grammaticale et le mode de l'original : un texte au « vous » descriptif
+(« Accélérez et foncez » en réponse à « Face à une deadline, vous… ») reste une description
+de la personne, jamais un ordre à l'impératif ; « compter sur vous » ne devient jamais « compter sur soi ».
 
 Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ni après, dans ce format exact :
 {{

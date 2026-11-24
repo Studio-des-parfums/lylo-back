@@ -14,8 +14,10 @@ branch_labels = None
 depends_on = None
 
 # Valeurs par défaut = format historique (2 favoris + 2 moins aimés, justifiés).
+# Libellés {langue: texte} ; NULL = libellés par défaut (« Vos préférés » / « Les moins aimés »).
 _COLUMNS = [
-    sa.Column("framing", sa.String(20), nullable=False, server_default="preference"),
+    sa.Column("positive_label", sa.JSON, nullable=True),
+    sa.Column("negative_label", sa.JSON, nullable=True),
     sa.Column("positive_count", sa.Integer, nullable=False, server_default="2"),
     sa.Column("positive_justify", sa.Boolean, nullable=False, server_default=sa.true()),
     sa.Column("negative_count", sa.Integer, nullable=False, server_default="2"),
@@ -29,8 +31,7 @@ def upgrade() -> None:
     op.create_check_constraint(
         "ck_question_groups_answer_format",
         "question_groups",
-        "framing IN ('preference', 'trait') AND positive_count BETWEEN 1 AND 3 "
-        "AND negative_count BETWEEN 0 AND 3",
+        "positive_count BETWEEN 1 AND 3 AND negative_count BETWEEN 0 AND 3",
     )
 
 

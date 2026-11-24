@@ -42,10 +42,13 @@ QUESTIONS = [
     for i in range(3)
 ]
 QUESTION_INDEXES = [0, 1, 2]
-# Formats de réponse testés (cf. app/core/answer_format.py) : historique Lylo, Help, sans « le moins ».
+# Formats de réponse testés (cf. app/core/answer_format.py) : défaut Lylo, Help, sans « le moins ».
 ANSWER_FORMATS = {
     "pref2x2": {},
-    "trait1x1": {"framing": "trait", "positive_count": 1, "negative_count": 1},
+    "help1x1": {
+        "positive_label": "Ce qui vous représente le plus", "negative_label": "Ce qui vous représente le moins",
+        "positive_count": 1, "negative_count": 1,
+    },
     "pref3x0": {"positive_count": 3, "negative_count": 0},
 }
 JUSTIFY_INDEXES = [0, 1]

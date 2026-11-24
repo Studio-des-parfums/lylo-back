@@ -54,3 +54,16 @@ def test_no_justification():
 def test_missing_format_means_historical_format():
     assert flow.answer_format({}) == AnswerFormat()
     assert flow.answer_format({"answer_format": {}}) == AnswerFormat()
+
+
+def test_labels_resolved_per_language_with_fallbacks():
+    from types import SimpleNamespace
+    from app.core.answer_format import answer_format_of
+
+    group = SimpleNamespace(
+        positive_label={"fr": "Me représente le plus", "en": "Describes me best"}, negative_label=None,
+        positive_count=1, positive_justify=True, negative_count=1, negative_justify=True,
+    )
+    assert answer_format_of(group, "en")["positive_label"] == "Describes me best"
+    assert answer_format_of(group, "de")["positive_label"] == "Me représente le plus"  # repli fr
+    assert answer_format_of(group, "en")["negative_label"] == "Your least favorites"   # défaut
