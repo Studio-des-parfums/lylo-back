@@ -20,6 +20,5 @@ sqlalchemy[asyncio]==2.0.52
 asyncpg==0.31.0
 alembic==1.19.2
 python-multipart==0.0.29
-cloudinary==1.46.2
 boto3==1.43.110
 resend==2.43.0

@@ -9,7 +9,7 @@ from app.core.answer_format import LabelTranslations
 from app.core.brands import DEFAULT_BRAND, BrandSlug
 from app.database.connection import get_db
 from app.database import crud
-from app.services import cloudinary_service, question_translation_service, s3_service
+from app.services import question_translation_service, s3_service
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 
@@ -406,9 +406,7 @@ async def delete_choice(choice_id: int, db: AsyncSession = Depends(get_db)):
     choice = await crud.get_choice_by_id(db, choice_id)
     if not choice:
         raise HTTPException(status_code=404, detail="Choix introuvable")
-    if choice.image_url and "cloudinary" in choice.image_url:
-        cloudinary_service.delete_choice_image(choice.image_url)
-    elif choice.image_url:
+    if choice.image_url:
         s3_service.delete_choice_image(choice.image_url)
     if not await crud.delete_choice(db, choice_id):
         raise HTTPException(status_code=404, detail="Choix introuvable")

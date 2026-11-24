@@ -140,7 +140,7 @@ async def attach_moodboard(formula: dict, language: str) -> dict:
                 heart_notes=formula.get("heart_notes", []),
                 base_notes=formula.get("base_notes", []),
                 image_url=image_url,
-                cloudinary_public_id=public_id,
+                storage_key=public_id,
             )
         except IntegrityError:
             await db.rollback()

@@ -196,5 +196,5 @@ class FormulaMoodboard(Base):
     heart_notes = Column(JSON, nullable=False)
     base_notes = Column(JSON, nullable=False)
     image_url = Column(String(500), nullable=False)
-    cloudinary_public_id = Column(String(255), nullable=False)
+    storage_key = Column(String(255), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
