@@ -1,4 +1,5 @@
 from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, JSON, Table, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database.connection import Base
@@ -81,12 +82,36 @@ class Question(Base):
     groups = relationship("QuestionGroup", secondary=question_group_links, back_populates="questions")
 
 
+class Brand(Base):
+    __tablename__ = "brands"
+
+    slug = Column(String(20), primary_key=True)
+    name = Column(String(100), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
+    # Coffret de notes du dashboard SDP (id externe, pas de FK) ; NULL = tous les coffrets
+    coffret_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class QuestionGroup(Base):
     __tablename__ = "question_groups"
+    __table_args__ = (UniqueConstraint("brand", "name", name="uq_question_groups_brand_name"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False, unique=True)
+    name = Column(String(100), nullable=False)
+    # Un seul groupe actif par marque (index unique partiel, cf. migration a1b2c3d4e5f7)
+    brand = Column(
+        String(20), ForeignKey("brands.slug", onupdate="CASCADE", ondelete="RESTRICT"),
+        nullable=False, default="lylo", server_default="lylo", index=True,
+    )
     is_active = Column(Boolean, default=True)
+    # Format de réponse (cf. app/core/answer_format.py)
+    positive_label = Column(JSONB, nullable=True)  # {langue: libellé}, NULL = défaut (JSONB : DISTINCT)
+    negative_label = Column(JSONB, nullable=True)
+    positive_count = Column(Integer, nullable=False, default=2, server_default="2")
+    positive_justify = Column(Boolean, nullable=False, default=True, server_default="true")
+    negative_count = Column(Integer, nullable=False, default=2, server_default="2")
+    negative_justify = Column(Boolean, nullable=False, default=True, server_default="true")
 
     questions = relationship("Question", secondary=question_group_links, back_populates="groups")
 
@@ -173,5 +198,5 @@ class FormulaMoodboard(Base):
     heart_notes = Column(JSON, nullable=False)
     base_notes = Column(JSON, nullable=False)
     image_url = Column(String(500), nullable=False)
-    cloudinary_public_id = Column(String(255), nullable=False)
+    storage_key = Column(String(255), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -4,6 +4,7 @@ import logging
 
 from app.config import get_settings
 from app.database.connection import AsyncSessionLocal
+from app.core.answer_format import answer_format_of
 from app.database import crud
 from app.services.livekit_service import create_token, create_room_with_agent
 from app.services import session_store
@@ -31,13 +32,15 @@ def order_questions_for_front(group_name: str, questions: list):
     return prioritized + remaining
 
 
-async def _load_questions_from_db(language: str, count: int) -> list[dict]:
-    """Charge les questions d'un groupe actif choisi aléatoirement."""
+async def _load_questions_from_db(language: str, count: int, brand: str) -> tuple[list[dict], dict]:
+    """Charge les questions et le format de réponse du questionnaire actif de la marque."""
     async with AsyncSessionLocal() as db:
-        groups = await crud.get_active_question_groups_with_questions(db, language=language)
+        groups = await crud.get_active_question_groups_with_questions(db, language=language, brand=brand)
 
     if not groups:
-        raise ValueError(f"Aucun groupe de questions actif disponible pour la langue '{language}'")
+        raise ValueError(
+            f"Aucun questionnaire actif pour la marque '{brand}' et la langue '{language}'"
+        )
 
     selected_group = random.choice(groups)
     questions = order_questions_for_front(selected_group.name, selected_group.questions)
@@ -55,7 +58,7 @@ async def _load_questions_from_db(language: str, count: int) -> list[dict]:
                 for c in choices
             ],
         })
-    return result
+    return result, answer_format_of(selected_group, language)
 
 
 async def create_session(
@@ -78,7 +81,7 @@ async def create_session(
     user_identity = f"user_{session_id}"
 
     voice_id = settings.get_voice_id(language, voice_gender)
-    questions = await _load_questions_from_db(language, question_count)
+    questions, answer_format = await _load_questions_from_db(language, question_count, brand)
 
     user_token = create_token(user_identity, room_name)
 
@@ -90,6 +93,7 @@ async def create_session(
         voice_id=voice_id,
         room_name=room_name,
         questions=questions,
+        answer_format=answer_format,
         mode=mode,
         input_mode=input_mode,
         brand=brand,

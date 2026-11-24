@@ -8,6 +8,9 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.languages import SupportedLanguage
+from app.agent.brands.registry import get_brand_profile
+from app.core.answer_format import answer_format_of
+from app.core.brands import DEFAULT_BRAND, BrandSlug
 from app.database.connection import get_db
 from app.database import crud
 from app.models.schemas import (
@@ -35,6 +38,11 @@ from app.services import catalog_service, formula_service, livekit_service, mail
 router = APIRouter(prefix="/api", tags=["sessions"])
 logger = logging.getLogger("lylo.sessions_api")
 
+
+
+def _uses_catalog(brand: str | None) -> bool:
+    """La marque recommande des parfums du catalogue (Ester) au lieu de générer des formules."""
+    return get_brand_profile(brand).result_engine == "catalog"
 
 @router.post("/session/start", response_model=StartSessionResponse)
 async def start_session(body: StartSessionRequest, db: AsyncSession = Depends(get_db)):
@@ -193,6 +201,8 @@ async def save_answer(session_id: str, body: SaveAnswerRequest):
         question_text=body.question_text,
         top_2=top_2,
         bottom_2=bottom_2,
+        positive_label=((meta or {}).get("answer_format") or {}).get("positive_label"),
+        negative_label=((meta or {}).get("answer_format") or {}).get("negative_label"),
     )
     return {"status": "ok"}
 
@@ -253,7 +263,7 @@ async def generate_formulas(
         )
     meta = session_store.get_session_meta(session_id) or {}
     brand = meta.get("brand", "lylo")
-    if brand == "ester":
+    if _uses_catalog(brand):
         result = await catalog_service.match_perfumes(session_id, count=3)
     else:
         result = await formula_service.generate_formulas(session_id, force_type=body.formula_type)
@@ -292,7 +302,7 @@ async def select_formula(
     meta = session_store.get_session_meta(session_id) or {}
     brand = meta.get("brand", "lylo")
 
-    if brand == "ester":
+    if _uses_catalog(brand):
         result = catalog_service.select_match(session_id, body.formula_index)
     else:
         result = formula_service.select_formula(session_id, body.formula_index)
@@ -305,11 +315,11 @@ async def select_formula(
         part for part in [profile.get("first_name"), profile.get("last_name")] if part
     ) or None
 
-    if brand == "ester":
+    if _uses_catalog(brand):
         db_formula = await crud.create_generated_formula(
             db,
             session_id=session_id,
-            brand="ester",
+            brand=brand,
             source="catalog",
             profile=formula.get("brand"),
             formula_type=None,
@@ -333,7 +343,7 @@ async def select_formula(
         db_formula = await crud.create_generated_formula(
             db,
             session_id=session_id,
-            brand="lylo",
+            brand=brand,
             source="generated",
             profile=formula.get("profile"),
             formula_type=formula.get("formula_type"),
@@ -354,7 +364,7 @@ async def select_formula(
         )
     result["reference"] = db_formula.reference
 
-    if brand != "ester" and not db_formula.moodboard_image_url:
+    if not _uses_catalog(brand) and not db_formula.moodboard_image_url:
         background_tasks.add_task(
             moodboard_service.generate_moodboard_for_reference,
             db_formula.reference,
@@ -473,16 +483,24 @@ async def get_languages(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/questions")
-async def get_questions(count: int = 12, language: SupportedLanguage = "fr", db: AsyncSession = Depends(get_db)):
-    groups = await crud.get_active_question_groups_with_questions(db, language=language)
+async def get_questions(
+    count: int = 12,
+    language: SupportedLanguage = "fr",
+    brand: BrandSlug = DEFAULT_BRAND,
+    db: AsyncSession = Depends(get_db),
+):
+    groups = await crud.get_active_question_groups_with_questions(db, language=language, brand=brand)
     if not groups:
-        raise HTTPException(status_code=404, detail="Aucun groupe de questions actif disponible")
+        raise HTTPException(
+            status_code=404, detail=f"Aucun questionnaire actif pour la marque '{brand}'",
+        )
     selected_group = random.choice(groups)
     questions = session_service.order_questions_for_front(selected_group.name, selected_group.questions)
     selected = questions[:count]
     return {
         "group_id": selected_group.id,
         "group_name": selected_group.name,
+        "answer_format": answer_format_of(selected_group, language),
         "questions": [
             {
                 "id": q.id,
@@ -659,7 +677,7 @@ async def replace_note_stateless(
     de personnalisation visuelle (mode quiz), où le client choisit une des 2 alternatives
     proposées pour une note plutôt que de le dire à l'oral."""
     result = await formula_service.replace_note_stateless(
-        body.formula, body.note_type, body.old_note, body.new_note, body.language,
+        body.formula, body.note_type, body.old_note, body.new_note, body.language, body.brand,
     )
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
@@ -696,10 +714,12 @@ async def batch_generate_formulas(body: BatchGenerateRequest, background_tasks: 
             "question": a.question_text,
             "top_2": a.top_2,
             "bottom_2": a.bottom_2,
+            "positive_label": a.positive_label,
+            "negative_label": a.negative_label,
         }
         for a in body.answers
     }
-    if body.brand == "ester":
+    if _uses_catalog(body.brand):
         result = await catalog_service.match_perfumes_stateless(
             answers=answers,
             language=body.language,
@@ -716,6 +736,7 @@ async def batch_generate_formulas(body: BatchGenerateRequest, background_tasks: 
             user_dislikes_raw=body.disliked_notes or "",
             force_type=body.formula_type,
             perfume_name=body.perfume_name,
+            brand=body.brand,
         )
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
@@ -733,10 +754,12 @@ async def multi_generate_formulas(body: MultiGenerateRequest, background_tasks: 
                 "question": a.question_text,
                 "top_2": a.top_2,
                 "bottom_2": a.bottom_2,
+            "positive_label": a.positive_label,
+            "negative_label": a.negative_label,
             }
             for a in participant.answers
         }
-        if body.brand == "ester":
+        if _uses_catalog(body.brand):
             result = await catalog_service.match_perfumes_stateless(
                 answers=answers,
                 language=body.language,
@@ -753,6 +776,7 @@ async def multi_generate_formulas(body: MultiGenerateRequest, background_tasks: 
                 user_dislikes_raw=participant.disliked_notes or "",
                 force_type=participant.formula_type,
                 perfume_name=participant.perfume_name,
+                brand=body.brand,
             )
         if "error" in result:
             raise HTTPException(status_code=400, detail=f"[{participant.color}] {result['error']}")

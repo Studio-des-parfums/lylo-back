@@ -1,6 +1,7 @@
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+from app.core.brands import DEFAULT_BRAND, BrandSlug
 
 from app.core.languages import SupportedLanguage
 
@@ -11,7 +12,7 @@ class StartSessionRequest(BaseModel):
     question_count: int = Field(default=1, ge=1, le=12)
     mode: Literal["guided", "discovery"] = "guided"
     input_mode: Literal["voice", "click"] = "voice"
-    brand: Literal["lylo", "ester"] = "lylo"
+    brand: BrandSlug = DEFAULT_BRAND
     email: str | None = None
     owner_email: str | None = None
     avatar: bool = True
@@ -63,12 +64,15 @@ class BatchAnswerItem(BaseModel):
     question_id: int
     question_text: str
     top_2: list[str]
-    bottom_2: list[str]
+    bottom_2: list[str] = []
+    # Libellés du questionnaire (answer_format) : « Vos préférés », « Ce qui vous représente le plus »…
+    positive_label: str | None = None
+    negative_label: str | None = None
 
 
 class BatchGenerateRequest(BaseModel):
     language: SupportedLanguage = "fr"
-    brand: Literal["lylo", "ester"] = "lylo"
+    brand: BrandSlug = DEFAULT_BRAND
     gender: str
     age: str
     has_disliked_notes: Literal["oui", "non"] = "non"
@@ -116,6 +120,8 @@ class ReplaceNoteStatelessRequest(BaseModel):
     # choisi une carte) — permet de répercuter la note modifiée sur l'enregistrement
     # existant plutôt que de le laisser périmé.
     reference: str | None = None
+    # Marque : choisit le coffret de notes (descriptions, booster recalculé)
+    brand: BrandSlug | None = None
 
 
 class SimilarPerfumesRequest(BaseModel):
@@ -139,7 +145,7 @@ class MultiParticipant(BaseModel):
 
 class MultiGenerateRequest(BaseModel):
     language: SupportedLanguage = "fr"
-    brand: Literal["lylo", "ester"] = "lylo"
+    brand: BrandSlug = DEFAULT_BRAND
     participants: list[MultiParticipant]
 
 

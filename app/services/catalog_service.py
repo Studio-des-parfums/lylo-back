@@ -16,6 +16,7 @@ from openai import AsyncOpenAI
 from app.config import get_settings
 from app.core.languages import LANGUAGE_NAMES
 from app.services import session_store
+from app.services.answers_summary import summarize_answers
 
 logger = logging.getLogger("lylo.catalog")
 
@@ -94,14 +95,7 @@ async def _ask_llm_for_matches(
 ) -> list[dict]:
     client = AsyncOpenAI(api_key=get_settings().openai_api_key)
 
-    answers_summary = []
-    for qid, data in answers.items():
-        if isinstance(data, str):
-            data = json.loads(data)
-        q = data.get("question", f"Question {qid}")
-        top = ", ".join(data.get("top_2", []))
-        bottom = ", ".join(data.get("bottom_2", []))
-        answers_summary.append(f"- {q}\n  Préférées: {top}\n  Moins appréciées: {bottom}")
+    answers_summary = summarize_answers(answers)
 
     catalog_lines = []
     for i, p in enumerate(catalog):
@@ -135,7 +129,7 @@ Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ni après, dans 
 Choisis exactement {count} parfums, tous DIFFÉRENTS, en variant les marques si possible."""
 
     user_prompt = f"""Réponses du client au questionnaire :
-{chr(10).join(answers_summary)}
+{answers_summary}
 
 {allergen_instruction}
 

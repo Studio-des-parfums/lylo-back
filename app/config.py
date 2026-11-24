@@ -51,7 +51,6 @@ class Settings(BaseSettings):
 
     # Ingredients API (dashboard)
     ingredients_api_url: str = "https://sdp-dashboard-back-production.up.railway.app"
-    ingredients_box_set: str = "Odyssée"
 
     # Email
     resend_api_key: str = ""
@@ -75,11 +74,6 @@ class Settings(BaseSettings):
 
     # PrintNode
     printnode_api_key: str = ""
-
-    # Cloudinary (legacy, conservé pour les images déjà uploadées)
-    cloudinary_cloud_name: str = ""
-    cloudinary_api_key: str = ""
-    cloudinary_api_secret: str = ""
 
     # Stockage de fichiers compatible S3 (Cloudflare R2, bucket lylo)
     aws_access_key_id: str = Field("", validation_alias=AliasChoices("STORAGE_ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID"))

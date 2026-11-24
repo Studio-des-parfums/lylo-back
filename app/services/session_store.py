@@ -21,6 +21,7 @@ def save_session_meta(
     voice_id: str,
     room_name: str,
     questions: list,
+    answer_format: dict | None = None,
     mode: str = "guided",
     input_mode: str = "voice",
     brand: str = "lylo",
@@ -36,6 +37,7 @@ def save_session_meta(
         "voice_id": voice_id,
         "room_name": room_name,
         "questions": questions,
+        "answer_format": answer_format or {},
         "mode": mode,
         "input_mode": input_mode,
         "brand": brand,
@@ -81,11 +83,15 @@ def save_answer(
     question_text: str,
     top_2: list[str],
     bottom_2: list[str],
+    positive_label: str | None = None,
+    negative_label: str | None = None,
 ) -> None:
     with _lock:
         if session_id not in _answers:
             _answers[session_id] = {}
         _answers[session_id][str(question_id)] = {
+            "positive_label": positive_label,
+            "negative_label": negative_label,
             "question": question_text,
             "top_2": top_2,
             "bottom_2": bottom_2,

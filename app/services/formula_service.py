@@ -1,7 +1,7 @@
 """Service de génération de formules de parfum.
 
 Architecture :
-  1. Récupère les ingrédients depuis l'API dashboard (filtrés par box_set/langue)
+  1. Récupère les ingrédients depuis l'API dashboard (filtrés par coffret de la marque/langue)
   2. Envoie au LLM les réponses + ingrédients disponibles
   3. Le LLM sélectionne les notes, déduit le profil et le type de formule
   4. Calcul des ml selon le tableau des formules (inchangé)
@@ -17,7 +17,10 @@ from openai import AsyncOpenAI
 
 from app.config import get_settings
 from app.core.languages import LANGUAGE_NAMES
+from app.database import crud
+from app.database.connection import AsyncSessionLocal
 from app.services import moodboard_service, session_store
+from app.services.answers_summary import summarize_answers
 
 # ── Configuration des types de formules ──────────────────────────────
 _FORMULA_TYPE_CONFIGS: dict[str, dict] = {
@@ -106,6 +109,22 @@ _BOOSTER_KEYWORDS: dict[str, list[str]] = {
 
 _CACHE_TTL_SECONDS = 60.0
 _ingredients_api_cache: dict[tuple[str, str], tuple[float, list[dict]]] = {}
+_brand_coffret_cache: dict[str, tuple[float, int | None]] = {}
+
+
+async def _brand_coffret_id(brand: str | None) -> int | None:
+    """Coffret de notes choisi pour la marque dans le dashboard (None = tous les coffrets)."""
+    if not brand:
+        return None
+    now = time.monotonic()
+    cached = _brand_coffret_cache.get(brand)
+    if cached and (now - cached[0]) < _CACHE_TTL_SECONDS:
+        return cached[1]
+    async with AsyncSessionLocal() as db:
+        row = await crud.get_brand(db, brand)
+    coffret_id = row.coffret_id if row else None
+    _brand_coffret_cache[brand] = (now, coffret_id)
+    return coffret_id
 
 
 def ingredients_api_language(language: str) -> str:
@@ -117,12 +136,12 @@ def ingredients_api_language(language: str) -> str:
 async def _fetch_ingredients_raw(params: dict) -> list[dict]:
     """Appelle GET /api/ingredients avec les `params` donnés, avec cache court en mémoire.
 
-    La clé de cache est (box_set, language) ou (type, language) selon les params
+    La clé de cache est (coffret_id, language) ou (type, language) selon les params
     passés — cohérent avec le fait que `_load_ingredients_from_db` et
     `_load_boosters_from_db` tapent le même endpoint avec des filtres différents.
     """
     settings = get_settings()
-    cache_key = (params.get("box_set") or params.get("type") or "", params.get("language", ""))
+    cache_key = (str(params.get("coffret_id") or params.get("type") or ""), params.get("language", ""))
 
     now = time.monotonic()
     cached = _ingredients_api_cache.get(cache_key)
@@ -138,11 +157,11 @@ async def _fetch_ingredients_raw(params: dict) -> list[dict]:
     return raw
 
 
-async def _load_ingredients_from_db(language: str, category: str | None = None) -> list[dict]:
+async def _load_ingredients_from_db(language: str, brand: str | None = None) -> list[dict]:
     """Récupère les ingrédients depuis l'API externe du dashboard SDP.
 
-    Note : le paramètre `category` n'existe pas côté API dashboard (qui filtre
-    par `box_set`) ; il est conservé pour compatibilité de signature mais ignoré.
+    Seules les notes du coffret choisi pour la marque (`brands.coffret_id`, réglé
+    dans le dashboard) sont proposées ; sans coffret, toutes les notes actives.
 
     Le dashboard SDP ne connaît des ingrédients qu'en fr/en — toute langue de
     session autre que le français interroge donc l'API en anglais (fallback
@@ -150,13 +169,11 @@ async def _load_ingredients_from_db(language: str, category: str | None = None) 
     (`api_language`), jamais sous la langue de session brute (ex. "es"), qui
     n'existe pas dans `translations` et retomberait sinon sur le français.
     """
-    settings = get_settings()
     api_language = ingredients_api_language(language)
-    params = {
-        "box_set": settings.ingredients_box_set,
-        "active_only": "true",
-        "language": api_language,
-    }
+    params = {"active_only": "true", "language": api_language}
+    coffret_id = await _brand_coffret_id(brand)
+    if coffret_id is not None:
+        params["coffret_id"] = str(coffret_id)
     raw_ingredients = await _fetch_ingredients_raw(params)
 
     ingredients = []
@@ -179,9 +196,8 @@ async def _load_ingredients_from_db(language: str, category: str | None = None) 
 async def _load_boosters_from_db(language: str) -> list[dict]:
     """Récupère les ingrédients de type "booster" depuis l'API dashboard.
 
-    Les boosters ne sont pas rattachés à un box_set : on ne filtre donc pas par
-    `box_set` (contrairement à `_load_ingredients_from_db`), sous peine de ne
-    jamais en recevoir.
+    Les boosters sont partagés par tous les coffrets : on ne filtre donc pas par
+    coffret (contrairement à `_load_ingredients_from_db`).
     """
     api_language = ingredients_api_language(language)
     params = {
@@ -273,15 +289,7 @@ def _build_formula_system_user_prompts(
 ) -> tuple[str, str]:
     top_block, heart_block, base_block = _format_ingredients_prompt(ingredients, excluded_names)
 
-    # Résumé des réponses au questionnaire
-    answers_summary = []
-    for qid, data in answers.items():
-        if isinstance(data, str):
-            data = json.loads(data)
-        q = data.get("question", f"Question {qid}")
-        top = ", ".join(data.get("top_2", []))
-        bottom = ", ".join(data.get("bottom_2", []))
-        answers_summary.append(f"- {q}\n  Préférées: {top}\n  Moins appréciées: {bottom}")
+    answers_summary = summarize_answers(answers)
 
     allergen_instruction = ""
     if user_allergens:
@@ -365,7 +373,7 @@ La préférence d'intensité du client (frais/mix/puissant, précisée plus bas)
 Dans "profile_description", explique en 2-3 phrases courtes et non techniques pourquoi CES notes précises (celles réellement choisies dans top_notes/heart_notes/base_notes) donnent au parfum son caractère léger/équilibré/intense. Ne mentionne QUE des familles olfactives (boisé, ambré, musqué, floral, agrumes...) effectivement présentes parmi les notes choisies — n'invente jamais une famille absente de la sélection. Reste concis, pas de liste, pas de jargon de parfumeur."""
 
     user_prompt = f"""Voici les réponses du client au questionnaire :
-{chr(10).join(answers_summary)}
+{answers_summary}
 
 Notes de tête disponibles :
 {top_block}
@@ -850,6 +858,7 @@ async def generate_formulas(session_id: str, force_type: str | None = None) -> d
 
     session_meta = session_store.get_session_meta(session_id)
     language = session_meta.get("language", "fr") if session_meta else "fr"
+    brand = session_meta.get("brand") if session_meta else None
 
     profile = session_store.get_user_profile(session_id)
     has_allergies = profile.get("has_allergies", "non") if profile else "non"
@@ -863,7 +872,7 @@ async def generate_formulas(session_id: str, force_type: str | None = None) -> d
     # Les deux appels sont indépendants (endpoint/params différents) : on les lance
     # en parallèle plutôt qu'en série pour ne payer qu'une seule latence réseau.
     ingredients, boosters = await asyncio.gather(
-        _load_ingredients_from_db(language), _load_boosters_with_fallback(language)
+        _load_ingredients_from_db(language, brand), _load_boosters_with_fallback(language)
     )
     if not ingredients:
         return {"error": "Aucun ingrédient disponible en base de données", "formulas": []}
@@ -893,6 +902,7 @@ async def generate_formulas_stateless(
     user_dislikes_raw: str = "",
     force_type: str | None = None,
     perfume_name: str | None = None,
+    brand: str | None = None,
 ) -> dict:
     if not answers:
         return {"error": "Aucune réponse fournie", "formulas": []}
@@ -903,7 +913,7 @@ async def generate_formulas_stateless(
     # Les deux appels sont indépendants (endpoint/params différents) : on les lance
     # en parallèle plutôt qu'en série pour ne payer qu'une seule latence réseau.
     ingredients, boosters = await asyncio.gather(
-        _load_ingredients_from_db(language), _load_boosters_with_fallback(language)
+        _load_ingredients_from_db(language, brand), _load_boosters_with_fallback(language)
     )
     if not ingredients:
         return {"error": "Aucun ingrédient disponible en base de données", "formulas": []}
@@ -947,6 +957,7 @@ async def change_selected_formula_type(session_id: str, formula_type: str) -> di
 
     session_meta = session_store.get_session_meta(session_id)
     language = session_meta.get("language", "fr") if session_meta else "fr"
+    brand = session_meta.get("brand") if session_meta else None
 
     profile = session_store.get_user_profile(session_id)
     has_allergies = profile.get("has_allergies", "non") if profile else "non"
@@ -960,7 +971,7 @@ async def change_selected_formula_type(session_id: str, formula_type: str) -> di
     # Les deux appels sont indépendants (endpoint/params différents) : on les lance
     # en parallèle plutôt qu'en série pour ne payer qu'une seule latence réseau.
     ingredients, boosters = await asyncio.gather(
-        _load_ingredients_from_db(language), _load_boosters_with_fallback(language)
+        _load_ingredients_from_db(language, brand), _load_boosters_with_fallback(language)
     )
     if not ingredients:
         return {"error": "Aucun ingrédient disponible en base de données"}
@@ -983,6 +994,7 @@ async def get_available_ingredients(session_id: str, note_type: str) -> dict:
 
     session_meta = session_store.get_session_meta(session_id)
     language = session_meta.get("language", "fr") if session_meta else "fr"
+    brand = session_meta.get("brand") if session_meta else None
 
     profile = session_store.get_user_profile(session_id)
     has_allergies = profile.get("has_allergies", "non") if profile else "non"
@@ -993,7 +1005,7 @@ async def get_available_ingredients(session_id: str, note_type: str) -> dict:
     user_allergens = _parse_comma_list(user_allergens_raw) if has_allergies in ("oui", "yes") else None
     user_dislikes = _parse_comma_list(user_dislikes_raw) if has_disliked_notes in ("oui", "yes") else None
 
-    ingredients = await _load_ingredients_from_db(language)
+    ingredients = await _load_ingredients_from_db(language, brand)
     ingredients = _filter_disliked_ingredients(ingredients, user_dislikes)
 
     selected = session_store.get_selected_formula(session_id)
@@ -1055,6 +1067,7 @@ async def replace_note(session_id: str, note_type: str, old_note: str, new_note:
     )
     session_meta = session_store.get_session_meta(session_id)
     language = session_meta.get("language", "fr") if session_meta else "fr"
+    brand = session_meta.get("brand") if session_meta else None
     # TODO: moodboard temporairement désactivé pour accélérer la génération (voir formula_service.py)
     # selected = await moodboard_service.attach_moodboard_safe(selected, language)
 
@@ -1062,7 +1075,9 @@ async def replace_note(session_id: str, note_type: str, old_note: str, new_note:
     return {"formula": selected}
 
 
-async def replace_note_stateless(formula: dict, note_type: str, old_note: str, new_note: str, language: str = "fr") -> dict:
+async def replace_note_stateless(
+    formula: dict, note_type: str, old_note: str, new_note: str, language: str = "fr", brand: str | None = None,
+) -> dict:
     """Équivalent de replace_note() sans session serveur active : prend/rend la formule
     complète, utilisé par l'écran de personnalisation visuelle (mode quiz). Contrairement
     à replace_note(), le booster est ici RECALCULÉ pour rester cohérent avec les notes
@@ -1101,7 +1116,7 @@ async def replace_note_stateless(formula: dict, note_type: str, old_note: str, n
     updated = dict(formula)
     updated[note_key] = notes
 
-    ingredients = await _load_ingredients_from_db(language)
+    ingredients = await _load_ingredients_from_db(language, brand)
     boosters = await _load_boosters_with_fallback(language)
 
     top_notes = updated.get("top_notes", [])

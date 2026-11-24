@@ -2,11 +2,14 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.answer_format import LabelTranslations
+from app.core.brands import DEFAULT_BRAND, BrandSlug
 from app.database.connection import get_db
 from app.database import crud
-from app.services import cloudinary_service, question_translation_service, s3_service
+from app.services import question_translation_service, s3_service
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 
@@ -53,6 +56,7 @@ class QuestionUpdate(BaseModel):
 class QuestionGroupMiniResponse(BaseModel):
     id: int
     name: str
+    brand: str
     is_active: bool
 
     class Config:
@@ -71,14 +75,34 @@ class QuestionResponse(BaseModel):
         from_attributes = True
 
 
-class QuestionGroupCreate(BaseModel):
+class _AnswerFormatFields(BaseModel):
+    """Format de réponse (cf. app/core/answer_format.py). Libellés saisis en français,
+    traduits automatiquement ; vide = libellé par défaut."""
+    positive_label: str | None = Field(None, max_length=120)
+    negative_label: str | None = Field(None, max_length=120)
+    positive_count: int = Field(2, ge=1, le=3)
+    positive_justify: bool = True
+    negative_count: int = Field(2, ge=0, le=3)
+    negative_justify: bool = True
+
+
+class QuestionGroupCreate(_AnswerFormatFields):
     name: str
+    brand: BrandSlug = DEFAULT_BRAND
+    # Activer un groupe désactive automatiquement les autres groupes de la même marque.
     is_active: bool = True
 
 
 class QuestionGroupUpdate(BaseModel):
     name: str | None = None
+    brand: BrandSlug | None = None
     is_active: bool | None = None
+    positive_label: str | None = Field(None, max_length=120)  # "" = revenir au défaut
+    negative_label: str | None = Field(None, max_length=120)
+    positive_count: int | None = Field(None, ge=1, le=3)
+    positive_justify: bool | None = None
+    negative_count: int | None = Field(None, ge=0, le=3)
+    negative_justify: bool | None = None
 
 
 class QuestionMiniResponse(BaseModel):
@@ -94,7 +118,14 @@ class QuestionMiniResponse(BaseModel):
 class QuestionGroupResponse(BaseModel):
     id: int
     name: str
+    brand: str
     is_active: bool
+    positive_label: LabelTranslations | None = None
+    negative_label: LabelTranslations | None = None
+    positive_count: int
+    positive_justify: bool
+    negative_count: int
+    negative_justify: bool
     questions: list[QuestionMiniResponse] = Field(default_factory=list)
 
     class Config:
@@ -223,9 +254,63 @@ async def delete_question(question_id: int, db: AsyncSession = Depends(get_db)):
 @router.get("/question-groups", response_model=list[QuestionGroupResponse])
 async def list_question_groups(
     active_only: bool = Query(False),
+    brand: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    return await crud.get_all_question_groups(db, active_only=active_only)
+    return await crud.get_all_question_groups(db, active_only=active_only, brand=brand)
+
+
+# ── Routes Marques ────────────────────────────────────────────────────
+
+class BrandResponse(BaseModel):
+    slug: str
+    name: str
+    is_active: bool
+    coffret_id: int | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class BrandCreate(BaseModel):
+    slug: BrandSlug
+    name: str = Field(min_length=1, max_length=100)
+    coffret_id: int | None = Field(default=None, ge=1)
+
+
+class BrandUpdate(BaseModel):
+    # Le slug n'est pas modifiable : il est utilisé par les déploiements (NEXT_PUBLIC_BRAND).
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    is_active: bool | None = None
+    # Coffret de notes du dashboard SDP ; null explicite = tous les coffrets
+    coffret_id: int | None = Field(default=None, ge=1)
+
+
+@router.get("/brands", response_model=list[BrandResponse])
+async def list_brands(db: AsyncSession = Depends(get_db)):
+    return await crud.get_all_brands(db)
+
+
+@router.post("/brands", response_model=BrandResponse, status_code=201)
+async def create_brand(body: BrandCreate, db: AsyncSession = Depends(get_db)):
+    if await crud.get_brand(db, body.slug):
+        raise HTTPException(status_code=409, detail=f"La marque '{body.slug}' existe déjà")
+    return await crud.create_brand(db, **body.model_dump())
+
+
+@router.patch("/brands/{slug}", response_model=BrandResponse)
+async def update_brand(slug: str, body: BrandUpdate, db: AsyncSession = Depends(get_db)):
+    # coffret_id peut être remis à null (tous les coffrets) ; les autres champs ignorent null
+    fields = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None or k == "coffret_id"}
+    updated = await crud.update_brand(db, slug, **fields)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Marque introuvable")
+    return updated
+
+
+async def _ensure_brand_exists(db: AsyncSession, slug: str | None) -> None:
+    if slug is not None and not await crud.get_brand(db, slug):
+        raise HTTPException(status_code=400, detail=f"Marque inconnue : '{slug}'")
 
 
 @router.get("/question-groups/{group_id}", response_model=QuestionGroupResponse)
@@ -236,14 +321,36 @@ async def get_question_group(group_id: int, db: AsyncSession = Depends(get_db)):
     return group
 
 
+async def _translated_labels(fields: dict) -> dict:
+    """Remplace les libellés saisis (français) par {langue: traduction} ; "" → None (défaut)."""
+    for key in ("positive_label", "negative_label"):
+        if key not in fields:
+            continue
+        text = (fields[key] or "").strip()
+        fields[key] = {"fr": text, **await question_translation_service.translate_text(text)} if text else None
+    return fields
+
+
 @router.post("/question-groups", response_model=QuestionGroupResponse, status_code=201)
 async def create_question_group(body: QuestionGroupCreate, db: AsyncSession = Depends(get_db)):
-    return await crud.create_question_group(db, **body.model_dump())
+    await _ensure_brand_exists(db, body.brand)
+    fields = await _translated_labels(body.model_dump())
+    try:
+        return await crud.create_question_group(db, **fields)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Un questionnaire porte déjà ce nom pour cette marque")
 
 
 @router.patch("/question-groups/{group_id}", response_model=QuestionGroupResponse)
 async def update_question_group(group_id: int, body: QuestionGroupUpdate, db: AsyncSession = Depends(get_db)):
-    updated = await crud.update_question_group(db, group_id, **body.model_dump(exclude_none=True))
+    await _ensure_brand_exists(db, body.brand)
+    fields = await _translated_labels(body.model_dump(exclude_none=True))
+    try:
+        updated = await crud.update_question_group(db, group_id, **fields)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Un questionnaire porte déjà ce nom pour cette marque")
     if not updated:
         raise HTTPException(status_code=404, detail="Groupe de questions introuvable")
     return updated
@@ -305,9 +412,7 @@ async def delete_choice(choice_id: int, db: AsyncSession = Depends(get_db)):
     choice = await crud.get_choice_by_id(db, choice_id)
     if not choice:
         raise HTTPException(status_code=404, detail="Choix introuvable")
-    if choice.image_url and "cloudinary" in choice.image_url:
-        cloudinary_service.delete_choice_image(choice.image_url)
-    elif choice.image_url:
+    if choice.image_url:
         s3_service.delete_choice_image(choice.image_url)
     if not await crud.delete_choice(db, choice_id):
         raise HTTPException(status_code=404, detail="Choix introuvable")
