@@ -2,7 +2,7 @@
 
 Les textes vivent par étape du parcours :
   safety.py                    profil + questions de sécurité (toutes marques)
-  questionnaire_preference.py  questionnaire « préférences » (favoris / moins aimés)
+  questionnaire.py             questionnaire, générique selon le format (préférences / traits)
   result_formula.py            résultat « formule » (Lylo, Help)
   result_catalog.py            résultat « catalogue » (Ester)
   standby.py                   veille

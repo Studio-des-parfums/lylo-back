@@ -7,7 +7,7 @@ de LyloProfile, surcharger `missions` / `personality`, puis l'enregistrer dans r
 from collections.abc import Callable
 from typing import ClassVar, Literal
 
-from app.agent.prompts import questionnaire_preference, result_formula, safety, standby
+from app.agent.prompts import questionnaire, result_formula, safety, standby
 from app.agent.prompts.context import PromptContext
 from app.agent.prompts.personality import PERSONALITY
 from app.agent.state import AgentPhase
@@ -23,7 +23,7 @@ class BrandProfile:
     result_engine: ClassVar[ResultEngine] = "formula"
     missions: ClassVar[dict[AgentPhase, Mission]] = {
         **safety.MISSIONS,
-        **questionnaire_preference.MISSIONS,
+        **questionnaire.MISSIONS,
         **result_formula.MISSIONS,
         **standby.MISSIONS,
     }

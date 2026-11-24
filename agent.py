@@ -14,6 +14,7 @@ from livekit.plugins import bey, cartesia, deepgram, openai, silero
 
 from app.agent.brands.registry import get_brand_profile
 from app.agent.builder import get_prompt
+from app.agent import questionnaire_flow as flow
 from app.agent.i18n import err, t
 from app.agent.state import AgentPhase, SessionState
 from app.config import get_settings
@@ -146,6 +147,7 @@ async def entrypoint(ctx: JobContext):
     input_mode = config.get("input_mode", "voice")
     brand = config.get("brand", "lylo")
     brand_profile = get_brand_profile(brand)
+    answer_fmt = flow.answer_format(config)
     use_avatar = [config.get("avatar", True)]
     _first_tts_call = [True]
 
@@ -282,9 +284,30 @@ async def entrypoint(ctx: JobContext):
 
         return t("profile_updated", lang, field=field, value=value)
 
+    # ─── Questionnaire : l'étape suivante est décidée par le format (questionnaire_flow) ──
+
+    async def _enter_question_step(question_id: int, phase: AgentPhase) -> str:
+        """Notifie le frontend de l'étape qui commence, puis avance la machine à états."""
+        if phase == AgentPhase.Q_LEAST:
+            await send_state_update({
+                "type": "step_asking_bottom_2",
+                "state": "questionnaire",
+                "question_id": question_id,
+                "top_2": state.current_top_2,
+            })
+        elif phase == AgentPhase.Q_CONFIRM:
+            await send_state_update({
+                "type": "step_awaiting_confirmation",
+                "state": "questionnaire",
+                "question_id": question_id,
+                "top_2": state.current_top_2,
+                "bottom_2": state.current_bottom_2,
+            })
+        return await advance_to(phase)
+
     async def _notify_top_2_now(question_id: int, top_2: list[str]) -> str:
-        """Logique commune à l'outil notify_top_2 et à la réception d'un clic utilisateur
-        (_handle_top_2_clicked) — enregistre les 2 favoris, notifie le frontend, avance la phase."""
+        """Logique commune à l'outil notify_top_2 et au clic utilisateur (_handle_top_2_clicked) :
+        enregistre les choix « le plus », notifie le frontend, passe à l'étape suivante."""
         state.current_top_2 = top_2
         logger.info(f"[Q] top_2 q={question_id} top_2={top_2}")
         await send_state_update({
@@ -293,28 +316,15 @@ async def entrypoint(ctx: JobContext):
             "question_id": question_id,
             "top_2": top_2,
         })
-        return await advance_to(AgentPhase.Q_JUSTIFY_FAV_1)
+        return await _enter_question_step(question_id, flow.after_positive_choices(answer_fmt, state))
 
     @function_tool()
     async def notify_top_2(question_id: int, top_2: list[str]):
-        """Notifies the frontend of the 2 favorite choices. Call IMMEDIATELY after identifying the 2 favorites. / Notifie le frontend des 2 choix préférés. Appeler IMMÉDIATEMENT après avoir identifié les 2 favoris."""
+        """Records the choices the user picked as BEST / FAVORITE (as many as asked). Call IMMEDIATELY once identified. / Enregistre les choix « le plus » (préférés / qui représentent le plus). Appeler IMMÉDIATEMENT."""
         return await _notify_top_2_now(question_id, top_2)
 
-    @function_tool()
-    async def notify_justification_top_2(question_id: int, choice: str):
-        """Call AFTER the user answers why they liked their first favorite, to move to the second justification. / Appeler APRÈS que l'utilisateur a répondu sur le premier favori, pour passer à la justification du second."""
-        logger.info(f"[Q] notify_justification_top_2 q={question_id} choice={choice}")
-        await send_state_update({
-            "type": "step_justification_top_2",
-            "state": "questionnaire",
-            "question_id": question_id,
-            "choice": choice,
-        })
-        return await advance_to(AgentPhase.Q_JUSTIFY_FAV_2)
-
     async def _notify_bottom_2_now(question_id: int, bottom_2: list[str]) -> str:
-        """Logique commune à l'outil notify_bottom_2 et à la réception d'un clic utilisateur
-        (_handle_bottom_2_clicked) — enregistre les 2 moins aimés, notifie le frontend, avance la phase."""
+        """Logique commune à l'outil notify_bottom_2 et au clic utilisateur (_handle_bottom_2_clicked)."""
         state.current_bottom_2 = bottom_2
         logger.info(f"[Q] bottom_2 q={question_id} bottom_2={bottom_2}")
         await send_state_update({
@@ -323,52 +333,21 @@ async def entrypoint(ctx: JobContext):
             "question_id": question_id,
             "bottom_2": bottom_2,
         })
-        return await advance_to(AgentPhase.Q_JUSTIFY_LEAST_1)
+        return await _enter_question_step(question_id, flow.after_negative_choices(answer_fmt, state))
 
     @function_tool()
     async def notify_bottom_2(question_id: int, bottom_2: list[str]):
-        """Notifies the frontend of the 2 least liked choices. Call IMMEDIATELY after identifying the 2 least liked. / Notifie le frontend des 2 choix les moins aimés. Appeler IMMÉDIATEMENT après avoir identifié les 2 moins aimés."""
+        """Records the choices the user picked as LEAST liked / LEAST representative (as many as asked). Call IMMEDIATELY once identified. / Enregistre les choix « le moins ». Appeler IMMÉDIATEMENT."""
         return await _notify_bottom_2_now(question_id, bottom_2)
 
     @function_tool()
-    async def notify_asking_bottom_2(question_id: int, top_2: list[str]):
-        """Call RIGHT BEFORE asking the user for their 2 least liked choices. / Appeler JUSTE AVANT de demander les 2 choix les moins aimés."""
-        state.current_top_2 = top_2
-        logger.info(f"[Q] notify_asking_bottom_2 q={question_id} top_2={top_2}")
-        await send_state_update({
-            "type": "step_asking_bottom_2",
-            "state": "questionnaire",
-            "question_id": question_id,
-            "top_2": top_2,
-        })
-        return await advance_to(AgentPhase.Q_LEAST)
-
-    @function_tool()
-    async def notify_justification_bottom_2(question_id: int, choice: str):
-        """Call AFTER the user answers why they disliked their first least liked choice, to move to the second. / Appeler APRÈS que l'utilisateur a répondu sur le premier moins aimé, pour passer à la justification du second."""
-        logger.info(f"[Q] notify_justification_bottom_2 q={question_id} choice={choice}")
-        await send_state_update({
-            "type": "step_justification_bottom_2",
-            "state": "questionnaire",
-            "question_id": question_id,
-            "choice": choice,
-        })
-        return await advance_to(AgentPhase.Q_JUSTIFY_LEAST_2)
-
-    @function_tool()
-    async def notify_awaiting_confirmation(question_id: int, top_2: list[str], bottom_2: list[str]):
-        """Call AFTER the user answers why they disliked their second least liked choice, to move to confirmation. / Appeler APRÈS la dernière justification pour passer à la confirmation."""
-        state.current_top_2 = top_2
-        state.current_bottom_2 = bottom_2
-        logger.info(f"[Q] notify_awaiting_confirmation q={question_id} top={top_2} bot={bottom_2}")
-        await send_state_update({
-            "type": "step_awaiting_confirmation",
-            "state": "questionnaire",
-            "question_id": question_id,
-            "top_2": top_2,
-            "bottom_2": bottom_2,
-        })
-        return await advance_to(AgentPhase.Q_CONFIRM)
+    async def justification_done(question_id: int):
+        """Call AFTER the user has explained the choice you just asked about. The next step is chosen automatically. / Appeler APRÈS que l'utilisateur a justifié le choix demandé ; l'étape suivante est choisie automatiquement."""
+        if state.phase not in (AgentPhase.Q_JUSTIFY_POSITIVE, AgentPhase.Q_JUSTIFY_NEGATIVE):
+            logger.warning(f"[Q] justification_done hors justification (state={state.phase.name}) — ignoré")
+            return t("continue_naturally", lang)
+        logger.info(f"[Q] justification_done q={question_id} phase={state.phase.name} index={state.justify_index}")
+        return await _enter_question_step(question_id, flow.after_justification(answer_fmt, state))
 
     @function_tool()
     async def notify_asking_top_2(question_id: int):
@@ -597,11 +576,8 @@ async def entrypoint(ctx: JobContext):
     all_tools = [
         save_user_profile,
         notify_top_2,
-        notify_justification_top_2,
         notify_bottom_2,
-        notify_asking_bottom_2,
-        notify_justification_bottom_2,
-        notify_awaiting_confirmation,
+        justification_done,
         notify_asking_top_2,
         notify_asking_intensity,
         save_answer,
@@ -806,8 +782,8 @@ async def entrypoint(ctx: JobContext):
         _on_data_received) — alternative au fait de les dire à l'oral, utile quand l'IA ne
         comprend pas bien une réponse vocale. Rejoue exactement la même logique que le tool
         notify_top_2 (que le LLM aurait appelé après avoir compris la réponse orale), puis
-        relance une réplique pour que l'agent enchaîne sur la justification — le prompt système
-        a déjà été mis à jour vers Q_JUSTIFY_FAV_1 par _notify_top_2_now/advance_to."""
+        relance une réplique pour que l'agent enchaîne sur l'étape suivante — le prompt système
+        a déjà été mis à jour par _notify_top_2_now/advance_to."""
         q = next((qq for qq in config["questions"] if qq["id"] == question_id), None)
         if not q or state.phase != AgentPhase.Q_FAVORITES:
             logger.warning(f"[CLICK] top_2 ignoré — question_id={question_id} phase={state.phase.name}")

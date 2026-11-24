@@ -42,9 +42,16 @@ QUESTIONS = [
     for i in range(3)
 ]
 QUESTION_INDEXES = [0, 1, 2]
+# Formats de réponse testés (cf. app/core/answer_format.py) : historique Lylo, Help, sans « le moins ».
+ANSWER_FORMATS = {
+    "pref2x2": {},
+    "trait1x1": {"framing": "trait", "positive_count": 1, "negative_count": 1},
+    "pref3x0": {"positive_count": 3, "negative_count": 0},
+}
+JUSTIFY_INDEXES = [0, 1]
 
 
-def _render(phase, lang, brand, input_mode, mode, gender, q_index) -> str:
+def _render(phase, lang, brand, input_mode, mode, gender, q_index, fmt="pref2x2", justify_index=0) -> str:
     state = agent.SessionState(
         phase=phase,
         current_question_index=q_index,
@@ -54,8 +61,12 @@ def _render(phase, lang, brand, input_mode, mode, gender, q_index) -> str:
         perfume_name="Aurore",
         formula_type="frais",
         selected_formula_index=0,
+        justify_index=justify_index,
     )
-    config = {"brand": brand, "questions": QUESTIONS, "mode": mode, "language": lang}
+    config = {
+        "brand": brand, "questions": QUESTIONS, "mode": mode, "language": lang,
+        "answer_format": ANSWER_FORMATS[fmt],
+    }
     return agent.get_prompt(state, config, "Rose", lang, input_mode)
 
 
@@ -66,6 +77,11 @@ def generate() -> dict[str, str]:
     ):
         key = f"{phase.name}|{lang}|{brand}|{input_mode}|{mode}|{gender}|q{q_index}"
         prompts[key] = _render(phase, lang, brand, input_mode, mode, gender, q_index)
+    # Phases du questionnaire : chaque format × index de justification (le reste n'en dépend pas)
+    q_phases = [p for p in agent.AgentPhase if p.name.startswith("Q_")]
+    for phase, lang, fmt, j in itertools.product(q_phases, LANGS, ANSWER_FORMATS, JUSTIFY_INDEXES):
+        key = f"{phase.name}|{lang}|fmt={fmt}|j{j}"
+        prompts[key] = _render(phase, lang, "lylo", "voice", "guided", "féminin", 0, fmt, j)
     return prompts
 
 
