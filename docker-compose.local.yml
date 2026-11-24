@@ -1,0 +1,45 @@
+# Environnement local : Postgres + backend.
+#   COMPOSE_DISABLE_ENV_FILE=1 docker compose -f docker-compose.local.yml up -d --build
+# (COMPOSE_DISABLE_ENV_FILE : le .env contient des templates Railway que compose ne sait pas lire.
+#  Port backend : BACKEND_PORT=8001 pour changer.)
+# Les variables DB_* ci-dessous écrasent celles du .env (qui pointent vers la prod).
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: lylo
+      POSTGRES_PASSWORD: lylo
+      POSTGRES_DB: lylo
+    ports:
+      - "5433:5432" # 5433 pour ne pas entrer en conflit avec un Postgres local
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lylo -d lylo"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: .
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    # Pas d'env_file : pydantic-settings lit /app/.env (monté ci-dessous),
+    # et les variables ci-dessous sont prioritaires sur le .env.
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: lylo
+      DB_PASSWORD: lylo
+      DB_NAME: lylo
+      PORT: "8000"
+      LIVEKIT_AGENT_NAME: lylo-dev
+    volumes:
+      - .:/app # hot reload
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
