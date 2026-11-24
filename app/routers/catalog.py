@@ -2,8 +2,10 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.brands import DEFAULT_BRAND, BrandSlug
 from app.database.connection import get_db
 from app.database import crud
 from app.services import cloudinary_service, question_translation_service, s3_service
@@ -53,6 +55,7 @@ class QuestionUpdate(BaseModel):
 class QuestionGroupMiniResponse(BaseModel):
     id: int
     name: str
+    brand: str
     is_active: bool
 
     class Config:
@@ -73,11 +76,14 @@ class QuestionResponse(BaseModel):
 
 class QuestionGroupCreate(BaseModel):
     name: str
+    brand: BrandSlug = DEFAULT_BRAND
+    # Activer un groupe désactive automatiquement les autres groupes de la même marque.
     is_active: bool = True
 
 
 class QuestionGroupUpdate(BaseModel):
     name: str | None = None
+    brand: BrandSlug | None = None
     is_active: bool | None = None
 
 
@@ -94,6 +100,7 @@ class QuestionMiniResponse(BaseModel):
 class QuestionGroupResponse(BaseModel):
     id: int
     name: str
+    brand: str
     is_active: bool
     questions: list[QuestionMiniResponse] = Field(default_factory=list)
 
@@ -223,9 +230,57 @@ async def delete_question(question_id: int, db: AsyncSession = Depends(get_db)):
 @router.get("/question-groups", response_model=list[QuestionGroupResponse])
 async def list_question_groups(
     active_only: bool = Query(False),
+    brand: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    return await crud.get_all_question_groups(db, active_only=active_only)
+    return await crud.get_all_question_groups(db, active_only=active_only, brand=brand)
+
+
+# ── Routes Marques ────────────────────────────────────────────────────
+
+class BrandResponse(BaseModel):
+    slug: str
+    name: str
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
+class BrandCreate(BaseModel):
+    slug: BrandSlug
+    name: str = Field(min_length=1, max_length=100)
+
+
+class BrandUpdate(BaseModel):
+    # Le slug n'est pas modifiable : il est utilisé par les déploiements (NEXT_PUBLIC_BRAND).
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    is_active: bool | None = None
+
+
+@router.get("/brands", response_model=list[BrandResponse])
+async def list_brands(db: AsyncSession = Depends(get_db)):
+    return await crud.get_all_brands(db)
+
+
+@router.post("/brands", response_model=BrandResponse, status_code=201)
+async def create_brand(body: BrandCreate, db: AsyncSession = Depends(get_db)):
+    if await crud.get_brand(db, body.slug):
+        raise HTTPException(status_code=409, detail=f"La marque '{body.slug}' existe déjà")
+    return await crud.create_brand(db, **body.model_dump())
+
+
+@router.patch("/brands/{slug}", response_model=BrandResponse)
+async def update_brand(slug: str, body: BrandUpdate, db: AsyncSession = Depends(get_db)):
+    updated = await crud.update_brand(db, slug, **body.model_dump(exclude_none=True))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Marque introuvable")
+    return updated
+
+
+async def _ensure_brand_exists(db: AsyncSession, slug: str | None) -> None:
+    if slug is not None and not await crud.get_brand(db, slug):
+        raise HTTPException(status_code=400, detail=f"Marque inconnue : '{slug}'")
 
 
 @router.get("/question-groups/{group_id}", response_model=QuestionGroupResponse)
@@ -238,12 +293,22 @@ async def get_question_group(group_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("/question-groups", response_model=QuestionGroupResponse, status_code=201)
 async def create_question_group(body: QuestionGroupCreate, db: AsyncSession = Depends(get_db)):
-    return await crud.create_question_group(db, **body.model_dump())
+    await _ensure_brand_exists(db, body.brand)
+    try:
+        return await crud.create_question_group(db, **body.model_dump())
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Un questionnaire porte déjà ce nom pour cette marque")
 
 
 @router.patch("/question-groups/{group_id}", response_model=QuestionGroupResponse)
 async def update_question_group(group_id: int, body: QuestionGroupUpdate, db: AsyncSession = Depends(get_db)):
-    updated = await crud.update_question_group(db, group_id, **body.model_dump(exclude_none=True))
+    await _ensure_brand_exists(db, body.brand)
+    try:
+        updated = await crud.update_question_group(db, group_id, **body.model_dump(exclude_none=True))
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Un questionnaire porte déjà ce nom pour cette marque")
     if not updated:
         raise HTTPException(status_code=404, detail="Groupe de questions introuvable")
     return updated

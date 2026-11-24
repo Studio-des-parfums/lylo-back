@@ -8,6 +8,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.languages import SupportedLanguage
+from app.core.brands import DEFAULT_BRAND, BrandSlug
 from app.database.connection import get_db
 from app.database import crud
 from app.models.schemas import (
@@ -473,10 +474,17 @@ async def get_languages(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/questions")
-async def get_questions(count: int = 12, language: SupportedLanguage = "fr", db: AsyncSession = Depends(get_db)):
-    groups = await crud.get_active_question_groups_with_questions(db, language=language)
+async def get_questions(
+    count: int = 12,
+    language: SupportedLanguage = "fr",
+    brand: BrandSlug = DEFAULT_BRAND,
+    db: AsyncSession = Depends(get_db),
+):
+    groups = await crud.get_active_question_groups_with_questions(db, language=language, brand=brand)
     if not groups:
-        raise HTTPException(status_code=404, detail="Aucun groupe de questions actif disponible")
+        raise HTTPException(
+            status_code=404, detail=f"Aucun questionnaire actif pour la marque '{brand}'",
+        )
     selected_group = random.choice(groups)
     questions = session_service.order_questions_for_front(selected_group.name, selected_group.questions)
     selected = questions[:count]

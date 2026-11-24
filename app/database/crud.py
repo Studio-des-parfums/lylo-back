@@ -1,12 +1,13 @@
 from datetime import date as date_type, datetime
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlalchemy.orm import selectinload
 
 from app.database.models import (
+    Brand,
     Customer,
     FormulaMoodboard,
     GeneratedFormula,
@@ -461,8 +462,42 @@ async def delete_question(db: AsyncSession, question_id: int) -> bool:
     return True
 
 
-async def get_all_question_groups(db: AsyncSession, active_only: bool = False) -> list[QuestionGroup]:
+# ── Marques ───────────────────────────────────────────────────────────
+
+async def get_all_brands(db: AsyncSession) -> list[Brand]:
+    result = await db.execute(select(Brand).order_by(Brand.created_at.asc(), Brand.slug.asc()))
+    return result.scalars().all()
+
+
+async def get_brand(db: AsyncSession, slug: str) -> Brand | None:
+    return await db.get(Brand, slug)
+
+
+async def create_brand(db: AsyncSession, **kwargs) -> Brand:
+    brand = Brand(**kwargs)
+    db.add(brand)
+    await db.commit()
+    await db.refresh(brand)
+    return brand
+
+
+async def update_brand(db: AsyncSession, slug: str, **kwargs) -> Brand | None:
+    brand = await db.get(Brand, slug)
+    if not brand:
+        return None
+    for field, value in kwargs.items():
+        setattr(brand, field, value)
+    await db.commit()
+    await db.refresh(brand)
+    return brand
+
+
+async def get_all_question_groups(
+    db: AsyncSession, active_only: bool = False, brand: str | None = None,
+) -> list[QuestionGroup]:
     query = select(QuestionGroup).options(selectinload(QuestionGroup.questions).selectinload(Question.groups))
+    if brand:
+        query = query.where(QuestionGroup.brand == brand)
     if active_only:
         query = query.where(QuestionGroup.is_active == True)
     result = await db.execute(query.order_by(QuestionGroup.name.asc()))
@@ -478,8 +513,18 @@ async def get_question_group_by_id(db: AsyncSession, group_id: int) -> QuestionG
     return result.scalar_one_or_none()
 
 
+async def _deactivate_other_groups(db: AsyncSession, brand: str, keep_id: int | None) -> None:
+    """Un seul questionnaire actif par marque : activer un groupe désactive les autres."""
+    stmt = update(QuestionGroup).where(QuestionGroup.brand == brand, QuestionGroup.is_active == True)
+    if keep_id is not None:
+        stmt = stmt.where(QuestionGroup.id != keep_id)
+    await db.execute(stmt.values(is_active=False))
+
+
 async def create_question_group(db: AsyncSession, **kwargs) -> QuestionGroup:
     group = QuestionGroup(**kwargs)
+    if group.is_active is not False:
+        await _deactivate_other_groups(db, group.brand or "lylo", keep_id=None)
     db.add(group)
     await db.commit()
     await db.refresh(group)
@@ -490,6 +535,12 @@ async def update_question_group(db: AsyncSession, group_id: int, **kwargs) -> Qu
     group = await get_question_group_by_id(db, group_id)
     if not group:
         return None
+    # Désactiver les autres AVANT de modifier le groupe : sinon l'autoflush écrirait
+    # is_active=True alors qu'un autre groupe de la marque est encore actif (index unique).
+    target_brand = kwargs.get("brand", group.brand)
+    target_active = kwargs.get("is_active", group.is_active)
+    if target_active:
+        await _deactivate_other_groups(db, target_brand, keep_id=group.id)
     for field, value in kwargs.items():
         setattr(group, field, value)
     await db.commit()
@@ -511,7 +562,9 @@ async def delete_question_group(db: AsyncSession, group_id: int) -> bool:
     return True
 
 
-async def get_active_question_groups_with_questions(db: AsyncSession, language: str) -> list[QuestionGroup]:
+async def get_active_question_groups_with_questions(
+    db: AsyncSession, language: str, brand: str = "lylo",
+) -> list[QuestionGroup]:
     result = await db.execute(
         select(QuestionGroup)
         .join(QuestionGroup.questions)
@@ -521,6 +574,7 @@ async def get_active_question_groups_with_questions(db: AsyncSession, language: 
         )
         .where(
             QuestionGroup.is_active == True,
+            QuestionGroup.brand == brand,
             Question.is_active == True,
             Question.language == language,
         )

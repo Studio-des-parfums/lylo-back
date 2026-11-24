@@ -1,6 +1,7 @@
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+from app.core.brands import DEFAULT_BRAND, BrandSlug
 
 from app.core.languages import SupportedLanguage
 
@@ -11,7 +12,7 @@ class StartSessionRequest(BaseModel):
     question_count: int = Field(default=1, ge=1, le=12)
     mode: Literal["guided", "discovery"] = "guided"
     input_mode: Literal["voice", "click"] = "voice"
-    brand: Literal["lylo", "ester"] = "lylo"
+    brand: BrandSlug = DEFAULT_BRAND
     email: str | None = None
     owner_email: str | None = None
     avatar: bool = True
@@ -68,7 +69,7 @@ class BatchAnswerItem(BaseModel):
 
 class BatchGenerateRequest(BaseModel):
     language: SupportedLanguage = "fr"
-    brand: Literal["lylo", "ester"] = "lylo"
+    brand: BrandSlug = DEFAULT_BRAND
     gender: str
     age: str
     has_disliked_notes: Literal["oui", "non"] = "non"
@@ -139,7 +140,7 @@ class MultiParticipant(BaseModel):
 
 class MultiGenerateRequest(BaseModel):
     language: SupportedLanguage = "fr"
-    brand: Literal["lylo", "ester"] = "lylo"
+    brand: BrandSlug = DEFAULT_BRAND
     participants: list[MultiParticipant]
 
 
