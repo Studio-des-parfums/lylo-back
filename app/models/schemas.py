@@ -1,6 +1,7 @@
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+from app.core.answer_format import Framing
 from app.core.brands import DEFAULT_BRAND, BrandSlug
 
 from app.core.languages import SupportedLanguage
@@ -64,7 +65,8 @@ class BatchAnswerItem(BaseModel):
     question_id: int
     question_text: str
     top_2: list[str]
-    bottom_2: list[str]
+    bottom_2: list[str] = []
+    framing: Framing = "preference"  # cadrage du questionnaire (answer_format.framing)
 
 
 class BatchGenerateRequest(BaseModel):

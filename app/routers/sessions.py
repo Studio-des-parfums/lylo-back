@@ -201,6 +201,7 @@ async def save_answer(session_id: str, body: SaveAnswerRequest):
         question_text=body.question_text,
         top_2=top_2,
         bottom_2=bottom_2,
+        framing=((meta or {}).get("answer_format") or {}).get("framing", "preference"),
     )
     return {"status": "ok"}
 
@@ -712,6 +713,7 @@ async def batch_generate_formulas(body: BatchGenerateRequest, background_tasks: 
             "question": a.question_text,
             "top_2": a.top_2,
             "bottom_2": a.bottom_2,
+            "framing": a.framing,
         }
         for a in body.answers
     }
@@ -749,6 +751,7 @@ async def multi_generate_formulas(body: MultiGenerateRequest, background_tasks: 
                 "question": a.question_text,
                 "top_2": a.top_2,
                 "bottom_2": a.bottom_2,
+            "framing": a.framing,
             }
             for a in participant.answers
         }

@@ -18,6 +18,7 @@ from openai import AsyncOpenAI
 from app.config import get_settings
 from app.core.languages import LANGUAGE_NAMES
 from app.services import moodboard_service, session_store
+from app.services.answers_summary import summarize_answers
 
 # ── Configuration des types de formules ──────────────────────────────
 _FORMULA_TYPE_CONFIGS: dict[str, dict] = {
@@ -273,15 +274,7 @@ def _build_formula_system_user_prompts(
 ) -> tuple[str, str]:
     top_block, heart_block, base_block = _format_ingredients_prompt(ingredients, excluded_names)
 
-    # Résumé des réponses au questionnaire
-    answers_summary = []
-    for qid, data in answers.items():
-        if isinstance(data, str):
-            data = json.loads(data)
-        q = data.get("question", f"Question {qid}")
-        top = ", ".join(data.get("top_2", []))
-        bottom = ", ".join(data.get("bottom_2", []))
-        answers_summary.append(f"- {q}\n  Préférées: {top}\n  Moins appréciées: {bottom}")
+    answers_summary = summarize_answers(answers)
 
     allergen_instruction = ""
     if user_allergens:
@@ -365,7 +358,7 @@ La préférence d'intensité du client (frais/mix/puissant, précisée plus bas)
 Dans "profile_description", explique en 2-3 phrases courtes et non techniques pourquoi CES notes précises (celles réellement choisies dans top_notes/heart_notes/base_notes) donnent au parfum son caractère léger/équilibré/intense. Ne mentionne QUE des familles olfactives (boisé, ambré, musqué, floral, agrumes...) effectivement présentes parmi les notes choisies — n'invente jamais une famille absente de la sélection. Reste concis, pas de liste, pas de jargon de parfumeur."""
 
     user_prompt = f"""Voici les réponses du client au questionnaire :
-{chr(10).join(answers_summary)}
+{answers_summary}
 
 Notes de tête disponibles :
 {top_block}

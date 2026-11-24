@@ -83,11 +83,13 @@ def save_answer(
     question_text: str,
     top_2: list[str],
     bottom_2: list[str],
+    framing: str = "preference",
 ) -> None:
     with _lock:
         if session_id not in _answers:
             _answers[session_id] = {}
         _answers[session_id][str(question_id)] = {
+            "framing": framing,
             "question": question_text,
             "top_2": top_2,
             "bottom_2": bottom_2,
