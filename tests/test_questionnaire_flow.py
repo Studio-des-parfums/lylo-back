@@ -78,3 +78,12 @@ def test_resolve_choices_numbers_and_fuzzy():
     assert resolve_choices(["le quatre"], labels) == [labels[3]]
     assert resolve_choices(["Vous savez des idées que personne n'a"], labels) == [labels[1]]
     assert resolve_choices(["on peut toujours compter sur vous"], labels) == [labels[2]]
+
+
+def test_count_mismatch():
+    from app.agent.questionnaire_flow import count_mismatch
+    assert count_mismatch(["A"], 1, "le plus") is None
+    assert count_mismatch(["A", "B"], 2, "le plus") is None
+    msg = count_mismatch(["A", "B"], 1, "Ce qui vous représente le plus")
+    assert msg and msg.startswith("[rejected]") and "ONE choice" in msg
+    assert count_mismatch(["A"], 2, "x").startswith("[rejected]")

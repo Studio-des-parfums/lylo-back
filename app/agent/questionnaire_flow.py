@@ -97,3 +97,16 @@ def resolve_choices(values: list, labels: list[str]) -> list[str]:
         if label not in out:
             out.append(label)
     return out
+
+
+def count_mismatch(choices: list[str], expected: int, label: str) -> str | None:
+    """Message de refus pour le LLM si le nombre de choix ne correspond pas au format
+    (ex. « le 1 et le 2 » alors que le questionnaire n'en demande qu'un) ; None si OK."""
+    if len(choices) == expected:
+        return None
+    what = "ONE choice" if expected == 1 else f"exactly {expected} choices"
+    return (
+        f"[rejected] The user gave {len(choices)} choice(s) {choices} but this question asks for {what} "
+        f"for \"{label}\". Nothing was recorded. In one short sentence, in the user's language, ask them to keep "
+        f"only {what} among those, then call the tool again with that selection."
+    )

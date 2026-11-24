@@ -314,6 +314,11 @@ async def entrypoint(ctx: JobContext):
         enregistre les choix « le plus », notifie le frontend, passe à l'étape suivante."""
         # Numéro (« 4 ») ou libellé approximatif → libellé exact (sinon le front ne masque pas la carte)
         top_2 = flow.resolve_choices(top_2, _choice_labels(question_id))
+        # Nombre de choix imposé par le format (1 pour Help) : « le 1 et le 2 » est refusé
+        mismatch = flow.count_mismatch(top_2, answer_fmt.positive_count, answer_fmt.positive_label)
+        if mismatch:
+            logger.warning(f"[Q] top_2 refusé : {len(top_2)} choix, attendu {answer_fmt.positive_count}")
+            return mismatch
         state.current_top_2 = top_2
         logger.info(f"[Q] top_2 q={question_id} top_2={top_2}")
         await send_state_update({
@@ -337,6 +342,10 @@ async def entrypoint(ctx: JobContext):
             logger.warning(f"[Q] bottom_2 refusé, déjà choisi en top_2 : {overlap}")
             return (f"[rejected] {overlap} already chosen as {answer_fmt.positive_label}. "
                     "Do not record it. Briefly ask again among the remaining choices only.")
+        mismatch = flow.count_mismatch(bottom_2, answer_fmt.negative_count, answer_fmt.negative_label)
+        if mismatch:
+            logger.warning(f"[Q] bottom_2 refusé : {len(bottom_2)} choix, attendu {answer_fmt.negative_count}")
+            return mismatch
         state.current_bottom_2 = bottom_2
         logger.info(f"[Q] bottom_2 q={question_id} bottom_2={bottom_2}")
         await send_state_update({
