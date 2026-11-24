@@ -7,6 +7,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects.postgresql import JSONB
 
 revision: str = "c2d3e4f5a6b7"
 down_revision: Union[str, Sequence[str], None] = "a1b2c3d4e5f7"
@@ -15,9 +16,10 @@ depends_on = None
 
 # Valeurs par défaut = format historique (2 favoris + 2 moins aimés, justifiés).
 # Libellés {langue: texte} ; NULL = libellés par défaut (« Vos préférés » / « Les moins aimés »).
+# JSONB (et non JSON) : les requêtes sur question_groups utilisent DISTINCT.
 _COLUMNS = [
-    sa.Column("positive_label", sa.JSON, nullable=True),
-    sa.Column("negative_label", sa.JSON, nullable=True),
+    sa.Column("positive_label", JSONB, nullable=True),
+    sa.Column("negative_label", JSONB, nullable=True),
     sa.Column("positive_count", sa.Integer, nullable=False, server_default="2"),
     sa.Column("positive_justify", sa.Boolean, nullable=False, server_default=sa.true()),
     sa.Column("negative_count", sa.Integer, nullable=False, server_default="2"),
