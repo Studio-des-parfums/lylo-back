@@ -266,6 +266,7 @@ class BrandResponse(BaseModel):
     slug: str
     name: str
     is_active: bool
+    coffret_id: int | None = None
 
     class Config:
         from_attributes = True
@@ -274,12 +275,15 @@ class BrandResponse(BaseModel):
 class BrandCreate(BaseModel):
     slug: BrandSlug
     name: str = Field(min_length=1, max_length=100)
+    coffret_id: int | None = Field(default=None, ge=1)
 
 
 class BrandUpdate(BaseModel):
     # Le slug n'est pas modifiable : il est utilisé par les déploiements (NEXT_PUBLIC_BRAND).
     name: str | None = Field(default=None, min_length=1, max_length=100)
     is_active: bool | None = None
+    # Coffret de notes du dashboard SDP ; null explicite = tous les coffrets
+    coffret_id: int | None = Field(default=None, ge=1)
 
 
 @router.get("/brands", response_model=list[BrandResponse])
@@ -296,7 +300,9 @@ async def create_brand(body: BrandCreate, db: AsyncSession = Depends(get_db)):
 
 @router.patch("/brands/{slug}", response_model=BrandResponse)
 async def update_brand(slug: str, body: BrandUpdate, db: AsyncSession = Depends(get_db)):
-    updated = await crud.update_brand(db, slug, **body.model_dump(exclude_none=True))
+    # coffret_id peut être remis à null (tous les coffrets) ; les autres champs ignorent null
+    fields = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None or k == "coffret_id"}
+    updated = await crud.update_brand(db, slug, **fields)
     if not updated:
         raise HTTPException(status_code=404, detail="Marque introuvable")
     return updated

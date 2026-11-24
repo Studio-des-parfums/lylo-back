@@ -120,6 +120,8 @@ class ReplaceNoteStatelessRequest(BaseModel):
     # choisi une carte) — permet de répercuter la note modifiée sur l'enregistrement
     # existant plutôt que de le laisser périmé.
     reference: str | None = None
+    # Marque : choisit le coffret de notes (descriptions, booster recalculé)
+    brand: BrandSlug | None = None
 
 
 class SimilarPerfumesRequest(BaseModel):

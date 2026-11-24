@@ -88,6 +88,8 @@ class Brand(Base):
     slug = Column(String(20), primary_key=True)
     name = Column(String(100), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True, server_default="true")
+    # Coffret de notes du dashboard SDP (id externe, pas de FK) ; NULL = tous les coffrets
+    coffret_id = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -677,7 +677,7 @@ async def replace_note_stateless(
     de personnalisation visuelle (mode quiz), où le client choisit une des 2 alternatives
     proposées pour une note plutôt que de le dire à l'oral."""
     result = await formula_service.replace_note_stateless(
-        body.formula, body.note_type, body.old_note, body.new_note, body.language,
+        body.formula, body.note_type, body.old_note, body.new_note, body.language, body.brand,
     )
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
@@ -736,6 +736,7 @@ async def batch_generate_formulas(body: BatchGenerateRequest, background_tasks: 
             user_dislikes_raw=body.disliked_notes or "",
             force_type=body.formula_type,
             perfume_name=body.perfume_name,
+            brand=body.brand,
         )
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
@@ -775,6 +776,7 @@ async def multi_generate_formulas(body: MultiGenerateRequest, background_tasks: 
                 user_dislikes_raw=participant.disliked_notes or "",
                 force_type=participant.formula_type,
                 perfume_name=participant.perfume_name,
+                brand=body.brand,
             )
         if "error" in result:
             raise HTTPException(status_code=400, detail=f"[{participant.color}] {result['error']}")

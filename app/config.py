@@ -51,7 +51,6 @@ class Settings(BaseSettings):
 
     # Ingredients API (dashboard)
     ingredients_api_url: str = "https://sdp-dashboard-back-production.up.railway.app"
-    ingredients_box_set: str = "Odyssée"
 
     # Email
     resend_api_key: str = ""
