@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.answer_format import AnswerFormat, Framing
 from app.core.brands import DEFAULT_BRAND, BrandSlug
 from app.database.connection import get_db
 from app.database import crud
@@ -74,7 +75,7 @@ class QuestionResponse(BaseModel):
         from_attributes = True
 
 
-class QuestionGroupCreate(BaseModel):
+class QuestionGroupCreate(AnswerFormat):
     name: str
     brand: BrandSlug = DEFAULT_BRAND
     # Activer un groupe désactive automatiquement les autres groupes de la même marque.
@@ -85,6 +86,11 @@ class QuestionGroupUpdate(BaseModel):
     name: str | None = None
     brand: BrandSlug | None = None
     is_active: bool | None = None
+    framing: Framing | None = None
+    positive_count: int | None = Field(None, ge=1, le=3)
+    positive_justify: bool | None = None
+    negative_count: int | None = Field(None, ge=0, le=3)
+    negative_justify: bool | None = None
 
 
 class QuestionMiniResponse(BaseModel):
@@ -97,7 +103,7 @@ class QuestionMiniResponse(BaseModel):
         from_attributes = True
 
 
-class QuestionGroupResponse(BaseModel):
+class QuestionGroupResponse(AnswerFormat):
     id: int
     name: str
     brand: str

@@ -102,6 +102,12 @@ class QuestionGroup(Base):
         nullable=False, default="lylo", server_default="lylo", index=True,
     )
     is_active = Column(Boolean, default=True)
+    # Format de réponse (cf. app/core/answer_format.py)
+    framing = Column(String(20), nullable=False, default="preference", server_default="preference")
+    positive_count = Column(Integer, nullable=False, default=2, server_default="2")
+    positive_justify = Column(Boolean, nullable=False, default=True, server_default="true")
+    negative_count = Column(Integer, nullable=False, default=2, server_default="2")
+    negative_justify = Column(Boolean, nullable=False, default=True, server_default="true")
 
     questions = relationship("Question", secondary=question_group_links, back_populates="groups")
 

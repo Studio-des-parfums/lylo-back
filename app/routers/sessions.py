@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.languages import SupportedLanguage
 from app.agent.brands.registry import get_brand_profile
+from app.core.answer_format import answer_format_of
 from app.core.brands import DEFAULT_BRAND, BrandSlug
 from app.database.connection import get_db
 from app.database import crud
@@ -497,6 +498,7 @@ async def get_questions(
     return {
         "group_id": selected_group.id,
         "group_name": selected_group.name,
+        "answer_format": answer_format_of(selected_group),
         "questions": [
             {
                 "id": q.id,
