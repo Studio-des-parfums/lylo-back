@@ -94,6 +94,8 @@ class SendFormulaByReferenceRequest(BaseModel):
     email: str | None = None
     first_name: str | None = None
     last_name: str | None = None
+    company: str | None = None
+    job_title: str | None = None
 
 
 class SaveFormulaRequest(BaseModel):

@@ -164,6 +164,8 @@ class GeneratedFormula(Base):
     sizes = Column(JSON)
     customer_name = Column(String(200), nullable=True)
     customer_email = Column(String(255), nullable=True)
+    customer_company = Column(String(200), nullable=True)
+    customer_job_title = Column(String(150), nullable=True)
     language = Column(String(10), nullable=True)
     perfume_name = Column(String(100), nullable=True)
     moodboard_notes_key = Column(String(64), nullable=True, index=True)

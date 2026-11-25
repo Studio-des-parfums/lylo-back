@@ -548,6 +548,11 @@ async def send_formula_mail_by_reference(
         updates["customer_email"] = target_email
     if target_name and target_name != (db_formula.customer_name or ""):
         updates["customer_name"] = target_name
+    # Champs optionnels : on n'écrase une valeur existante que si une nouvelle est fournie.
+    for field, column in (("company", "customer_company"), ("job_title", "customer_job_title")):
+        value = (getattr(body, field) or "").strip()
+        if value and value != (getattr(db_formula, column) or ""):
+            updates[column] = value
     if updates:
         db_formula = await crud.update_generated_formula_by_reference(db, reference, **updates)
         if not db_formula:
@@ -620,6 +625,8 @@ async def list_formulas(
                 "sizes": r.sizes,
                 "customer_name": r.customer_name,
                 "customer_email": r.customer_email,
+                "customer_company": r.customer_company,
+                "customer_job_title": r.customer_job_title,
                 "language": r.language,
                 "moodboard_notes_key": r.moodboard_notes_key,
                 "moodboard_image_url": r.moodboard_image_url,
