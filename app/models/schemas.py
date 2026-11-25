@@ -103,6 +103,9 @@ class SaveFormulaRequest(BaseModel):
     customer_name: str | None = None
     customer_email: str | None = None
     participant_id: int | None = None
+    # Mode duo : couleur choisie par la personne (chaque participant enregistre sa formule
+    # individuellement, depuis son propre écran final).
+    participant_color: str | None = None
     language: SupportedLanguage = "fr"
     input_mode: str = "quiz"
 

@@ -649,7 +649,7 @@ async def save_formula(
     formula = body.formula
     db_formula = await crud.create_generated_formula(
         db,
-        session_id=formula.get("session_id") or "quiz",
+        session_id=formula.get("session_id") or ("quiz-multi" if body.participant_color else "quiz"),
         profile=formula.get("profile"),
         formula_type=formula.get("formula_type"),
         top_notes=formula.get("top_notes"),
@@ -663,6 +663,7 @@ async def save_formula(
         perfume_name=formula.get("perfume_name"),
         **_extract_moodboard_fields(formula),
         participant_id=body.participant_id,
+        participant_color=body.participant_color,
     )
 
     if not db_formula.moodboard_image_url:
