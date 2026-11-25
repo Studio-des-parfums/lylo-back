@@ -125,6 +125,9 @@ class ReplaceNoteStatelessRequest(BaseModel):
     # choisi une carte) — permet de répercuter la note modifiée sur l'enregistrement
     # existant plutôt que de le laisser périmé.
     reference: str | None = None
+    # Mode vocal : session LiveKit en cours — la formule sélectionnée côté session est aussi
+    # mise à jour, pour que l'agent voie la note remplacée au clic.
+    session_id: str | None = None
     # Marque : choisit le coffret de notes (descriptions, booster recalculé)
     brand: BrandSlug | None = None
 

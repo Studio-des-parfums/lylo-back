@@ -701,6 +701,10 @@ async def replace_note_stateless(
             sizes=updated.get("sizes"),
         )
 
+    # Mode vocal : garde l'état de session (lu par l'agent via l'API) aligné sur l'écran.
+    if body.session_id and session_store.get_selected_formula(body.session_id):
+        session_store.save_selected_formula(body.session_id, result["formula"])
+
     return result
 
 
