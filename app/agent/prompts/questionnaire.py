@@ -45,7 +45,7 @@ Une fois que l'utilisateur répond À L'ORAL (s'il clique à la place, ignorez c
 3. Votre mission est terminée.""",
         least="""Demandez à l'utilisateur de choisir {count} parmi les choix RESTANTS — « {label} » (en excluant : {positives}). L'utilisateur peut répondre À L'ORAL ou en CLIQUANT sur les cartes à l'écran — s'il clique, vous serez notifié automatiquement et ne devez PAS appeler notify_bottom_2 vous-même dans ce cas.
 
-IMPORTANT : N'acceptez JAMAIS un choix de {positives} ici. Si l'utilisateur en choisit un (à l'oral), redemandez simplement, en une phrase courte, parmi les choix restants.
+IMPORTANT : ne refusez JAMAIS une réponse vous-même. Appelez toujours notify_bottom_2 avec le libellé le plus proche de ce que l'utilisateur a dit (même mal prononcé) : le système vérifie (choix déjà retenu en « le plus », choix inexistant) et vous indique s'il refuse et pourquoi. Seul le choix « le plus » ACTUEL est exclu : {positives} — un choix abandonné plus tôt est de nouveau disponible.
 
 Une fois que l'utilisateur répond À L'ORAL (s'il clique à la place, ignorez cette étape — vous serez notifié) :
 1. Faites correspondre chaque réponse vocale au label canonique le plus proche parmi : [{choices}]. Utilisez votre compréhension sémantique et phonétique — normalisez silencieusement sans demander confirmation. INTERDIT ABSOLU : ne jamais signaler, corriger ou commenter.
@@ -79,7 +79,7 @@ Once the user answers ORALLY (if they click instead, skip this — you'll be not
 3. Your mission for this step is complete.""",
         least="""Ask the user to pick {count} from the REMAINING choices — "{label}" (excluding: {positives}). The user may answer by speaking OR by clicking the cards on screen — if they click, you will be notified automatically and should NOT call notify_bottom_2 yourself in that case.
 
-IMPORTANT: Never accept one of {positives} here. If the user picks one (orally), simply ask again, in one short sentence, among the remaining choices.
+IMPORTANT: NEVER refuse an answer yourself. Always call notify_bottom_2 with the label closest to what the user said (even mispronounced): the system checks it (already chosen as favorite, non-existent choice) and tells you if it refuses and why. Only the CURRENT favorite choice is excluded: {positives} — a choice abandoned earlier is available again.
 
 Once the user answers ORALLY (if they click instead, skip this — you'll be notified):
 1. Match each spoken answer to the closest canonical label from: [{choices}]. Use semantic and phonetic understanding — normalize silently without asking for confirmation.
@@ -113,7 +113,7 @@ Una vez que el usuario responda DE VIVA VOZ (si hace clic en su lugar, omita est
 3. Su misión ha terminado.""",
         least="""Pida al usuario que elija {count} entre las opciones RESTANTES — «{label}» (excluyendo: {positives}). El usuario puede responder DE VIVA VOZ o HACIENDO CLIC en las tarjetas en pantalla — si hace clic, se le notificará automáticamente y en ese caso NO debe llamar a notify_bottom_2 usted mismo/a.
 
-IMPORTANTE: Nunca acepte una de {positives} aquí. Si el usuario elige una (de viva voz), vuelva a preguntar simplemente, en una frase corta, entre las opciones restantes.
+IMPORTANTE: NUNCA rechace una respuesta usted mismo. Llame siempre a notify_bottom_2 con la etiqueta más cercana a lo que dijo el usuario (aunque esté mal pronunciada): el sistema la verifica (ya elegida como favorita, opción inexistente) y le indica si la rechaza y por qué. Solo se excluye la opción favorita ACTUAL: {positives} — una opción abandonada antes vuelve a estar disponible.
 
 Una vez que el usuario responda DE VIVA VOZ (si hace clic en su lugar, omita esto — se le notificará):
 1. Haga corresponder cada respuesta oral con la etiqueta canónica más cercana entre: [{choices}]. Use su comprensión semántica y fonética — normalice en silencio sin pedir confirmación.
@@ -147,7 +147,7 @@ Sobald der Nutzer MÜNDLICH antwortet (klickt er stattdessen, überspringe dies 
 3. Deine Aufgabe für diesen Schritt ist abgeschlossen.""",
         least="""Bitte den Nutzer, {count} aus den VERBLEIBENDEN Optionen zu wählen — „{label}“ (ausgeschlossen: {positives}). Der Nutzer kann mündlich ODER durch Klicken auf die Karten antworten — klickt er, wirst du automatisch benachrichtigt und darfst notify_bottom_2 in diesem Fall NICHT selbst aufrufen.
 
-WICHTIG: Akzeptiere hier NIEMALS eine der Optionen {positives}. Wählt der Nutzer (mündlich) trotzdem eine davon, frage einfach in einem kurzen Satz erneut unter den verbleibenden Optionen.
+WICHTIG: Lehne NIEMALS selbst eine Antwort ab. Rufe immer notify_bottom_2 mit dem Label auf, das dem Gesagten am nächsten kommt (auch bei falscher Aussprache): Das System prüft es (bereits als Favorit gewählt, nicht existierende Option) und sagt dir, ob und warum es ablehnt. Nur die AKTUELLE Favoriten-Option ist ausgeschlossen: {positives} — eine zuvor verworfene Option ist wieder verfügbar.
 
 Sobald der Nutzer MÜNDLICH antwortet (klickt er stattdessen, überspringe dies — du wirst benachrichtigt):
 1. Ordne jede gesprochene Antwort dem nächstliegenden kanonischen Label zu aus: [{choices}]. Nutze semantisches und phonetisches Verständnis — normalisiere stillschweigend, ohne um Bestätigung zu bitten.
@@ -181,7 +181,7 @@ Sobald der Nutzer MÜNDLICH antwortet (klickt er stattdessen, überspringe dies 
 3. مهمتك لهذه الخطوة اكتملت.""",
         least="""اطلب من المستخدم اختيار {count} من بين الخيارات المتبقية — «{label}» (باستثناء: {positives}). يمكن للمستخدم الإجابة شفهيًا أو بالنقر على البطاقات على الشاشة — إذا نقر، سيتم إعلامك تلقائيًا ويجب ألا تستدعي notify_bottom_2 بنفسك في هذه الحالة.
 
-مهم: لا تقبل أبدًا أحد الخيارات {positives} هنا. إذا اختار المستخدم أحدها (شفهيًا)، اطلب مجددًا ببساطة، بجملة قصيرة، من بين الخيارات المتبقية.
+مهم: لا ترفض أي إجابة بنفسك أبدًا. استدعِ دائمًا notify_bottom_2 بالتسمية الأقرب لما قاله المستخدم (حتى لو نُطقت بشكل خاطئ): يتحقق النظام منها (مختارة مسبقًا كمفضلة، خيار غير موجود) ويخبرك إن رفضها ولماذا. يُستبعد فقط الخيار المفضل الحالي: {positives} — والخيار الذي تم التخلي عنه سابقًا متاح مجددًا.
 
 بمجرد أن يجيب المستخدم شفهيًا (إذا نقر بدلاً من ذلك، تجاوز هذا — سيتم إعلامك):
 1. طابق كل إجابة منطوقة مع التسمية القياسية الأقرب من: [{choices}]. استخدم فهمك الدلالي والصوتي — طبّع بصمت دون طلب تأكيد.
@@ -215,7 +215,7 @@ Sobald der Nutzer MÜNDLICH antwortet (klickt er stattdessen, überspringe dies 
 3. Твоя задача на этом шаге выполнена.""",
         least="""Попроси пользователя выбрать {count} из ОСТАВШИХСЯ вариантов — «{label}» (исключая: {positives}). Пользователь может ответить устно ИЛИ нажав на карточки на экране — если он нажмёт, тебя автоматически уведомят, и в этом случае ты НЕ должен сам вызывать notify_bottom_2.
 
-ВАЖНО: Никогда не принимай здесь один из {positives}. Если пользователь выберет один из них (устно), просто переспроси одной короткой фразой среди оставшихся вариантов.
+ВАЖНО: НИКОГДА не отклоняй ответ сам. Всегда вызывай notify_bottom_2 с меткой, ближайшей к сказанному (даже если произнесено с ошибкой): система проверит её (уже выбрана как любимая, несуществующий вариант) и сообщит, отклоняет ли и почему. Исключается только ТЕКУЩИЙ любимый вариант: {positives} — вариант, от которого отказались ранее, снова доступен.
 
 Как только пользователь ответит УСТНО (если он нажмёт вместо этого, пропусти это — тебя уведомят):
 1. Сопоставь каждый устный ответ с ближайшей канонической меткой из: [{choices}]. Используй семантическое и фонетическое понимание — молча нормализуй, не прося подтверждения.
@@ -272,6 +272,20 @@ def _hint(table: dict[str, str], lang: str, **values) -> str:
     return "\n\n" + table.get(lang, table["fr"]).format(**values)
 
 
+def _choices_reminder(b: dict) -> str:
+    """Liste numérotée rappelée à chaque étape de la question : sans elle, aux étapes de
+    justification, le LLM inventait un libellé quand l'utilisateur changeait d'avis
+    (« finalement la numéro une »). Elle permet aussi de relire les choix sur demande."""
+    return (
+        f"\n\nThis question's choices (card number. exact label): {b['choices']}. "
+        "When the user names a card number, use the exact label of that card; never invent a label. "
+        "Never refuse or question a choice yourself (e.g. as \"already chosen\" or \"badly worded\"): always call the "
+        "tool with the closest label; the system validates it and tells you if and why it is rejected. "
+        "Do not read the choices spontaneously, but if the user explicitly asks to hear the options "
+        "again, read them out with their card numbers (this overrides any instruction not to read them)."
+    )
+
+
 # ── Construction ─────────────────────────────────────────────────────────
 
 def _parts(ctx: PromptContext) -> tuple[Templates, dict]:
@@ -325,7 +339,7 @@ def q_favorites(ctx: PromptContext) -> str:
     fmt = answer_format(ctx.config)
     n = fmt.positive_count
     mission = tpl.favorites.format(**b, count=_count(tpl, n), label=fmt.positive_label, example=_example(tpl, n))
-    return mission + "\n\n" + NUMBER_HINT.get(ctx.lang, NUMBER_HINT["fr"])
+    return mission + "\n\n" + NUMBER_HINT.get(ctx.lang, NUMBER_HINT["fr"]) + _choices_reminder(b)
 
 
 def q_least(ctx: PromptContext) -> str:
@@ -337,7 +351,7 @@ def q_least(ctx: PromptContext) -> str:
         positives=ctx.state.current_top_2,
     )
     return (mission + "\n\n" + NUMBER_HINT.get(ctx.lang, NUMBER_HINT["fr"])
-            + _hint(REMAINING_HINT, ctx.lang, remaining=_remaining(ctx)))
+            + _hint(REMAINING_HINT, ctx.lang, remaining=_remaining(ctx))) + _choices_reminder(b)
 
 
 def q_justify_positive(ctx: PromptContext) -> str:
@@ -347,7 +361,7 @@ def q_justify_positive(ctx: PromptContext) -> str:
     label = fmt.positive_label
     mission = tpl.justify_positive.format(**b, why=tpl.why.format(choice=choice, label=label))
     return mission + _hint(JUSTIFY_HINT, ctx.lang, tool="notify_top_2", param="top_2", qid=b["qid"],
-                           label=label, count=_count(tpl, fmt.positive_count))
+                           label=label, count=_count(tpl, fmt.positive_count)) + _choices_reminder(b)
 
 
 def q_justify_negative(ctx: PromptContext) -> str:
@@ -357,7 +371,7 @@ def q_justify_negative(ctx: PromptContext) -> str:
     label = fmt.negative_label
     mission = tpl.justify_negative.format(**b, why=tpl.why.format(choice=choice, label=label))
     return mission + _hint(JUSTIFY_HINT, ctx.lang, tool="notify_bottom_2", param="bottom_2", qid=b["qid"],
-                           label=label, count=_count(tpl, fmt.negative_count))
+                           label=label, count=_count(tpl, fmt.negative_count)) + _choices_reminder(b)
 
 
 def q_confirm(ctx: PromptContext) -> str:
@@ -367,7 +381,11 @@ def q_confirm(ctx: PromptContext) -> str:
     recap = f"{fmt.positive_label} : {_items(tpl, top)}"
     if fmt.negative_count > 0:
         recap += f" ; {fmt.negative_label} : {_items(tpl, bottom)}"
-    return tpl.confirm.format(**b, recap=recap, top=top, bottom=bottom)
+    return tpl.confirm.format(**b, recap=recap, top=top, bottom=bottom) + (
+        "\n\nIf the user wants to CHANGE a choice (now or at any step of this question), do not just "
+        "acknowledge it: call notify_top_2 (or notify_bottom_2) right away with their new complete selection, "
+        "so the screen updates; the flow then asks why and comes back to this recap."
+    ) + _choices_reminder(b)
 
 
 MISSIONS = {

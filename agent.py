@@ -15,6 +15,8 @@ from livekit.plugins import bey, cartesia, deepgram, openai, silero
 from app.agent.brands.registry import get_brand_profile
 from app.agent.builder import get_prompt
 from app.agent import questionnaire_flow as flow
+from app.agent import speech
+from app.agent import profile_validation
 from app.agent.i18n import err, t
 from app.agent.state import AgentPhase, SessionState
 from app.config import get_settings
@@ -158,6 +160,21 @@ async def entrypoint(ctx: JobContext):
     paused = [False]
     user_interrupted = [False]
 
+    # ─── Texte parlé : formes genrées des libellés (« solo/a », « seul(e) ») ──
+
+    async def _spoken_text(text):
+        """Le TTS lit littéralement « solo/a » : on remplace par la forme adaptée au genre.
+        Le flux est découpé au dernier espace pour ne jamais couper « solo/ » | « a »."""
+        buf = ""
+        async for chunk in text:
+            buf += chunk
+            cut = buf.rfind(" ")
+            if cut >= 0:
+                yield speech.resolve_gender_forms(buf[:cut + 1], speech.is_feminine(state.profile.get("gender")))
+                buf = buf[cut + 1:]
+        if buf:
+            yield speech.resolve_gender_forms(buf, speech.is_feminine(state.profile.get("gender")))
+
     # ─── Sous-classe agent avec override TTS et LLM ───────────────────────
 
     class StatefulAgent(Agent):
@@ -189,7 +206,7 @@ async def entrypoint(ctx: JobContext):
 
             frame_count = 0
             try:
-                async for frame in Agent.default.tts_node(self, text, model_settings):
+                async for frame in Agent.default.tts_node(self, _spoken_text(text), model_settings):
                     if frame_count == 0:
                         logger.debug(f"[TTS_NODE:{tts_call_id}] FIRST real audio frame at {time.time():.3f}")
                     frame_count += 1
@@ -236,6 +253,19 @@ async def entrypoint(ctx: JobContext):
     @function_tool()
     async def save_user_profile(field: str, value: str):
         """Saves a user profile field. Call immediately when user provides: first_name, gender, age, pregnant, has_disliked_notes, disliked_notes, has_allergies, or allergies. / Sauvegarde un champ du profil utilisateur. Appeler immédiatement quand l'utilisateur fournit : first_name, gender, age, pregnant, has_disliked_notes, disliked_notes, has_allergies ou allergies."""
+        # Étapes obligatoires : seul le champ de l'étape en cours, avec une valeur valide, fait
+        # avancer. Un champ déjà renseigné peut être corrigé, sans changer d'étape.
+        expected = profile_validation.EXPECTED_FIELD.get(state.phase)
+        if field != expected and field not in state.profile:
+            logger.warning(f"[PROFILE] refusé : {field} hors étape (state={state.phase.name}, attendu={expected})")
+            return (f"[rejected] Wrong step: the current REQUIRED step is '{expected}'. Nothing was recorded. "
+                    "Ask that question; never skip it.")
+        value, refusal = profile_validation.validate(field, value)
+        if refusal:
+            logger.warning(f"[PROFILE] refusé : {field} invalide (state={state.phase.name})")
+            return refusal
+        is_correction = field != expected
+
         resp = await http.post(
             f"/api/session/{session_id}/save-profile",
             json={"field": field, "value": value},
@@ -253,13 +283,16 @@ async def entrypoint(ctx: JobContext):
             "missing_fields": data.get("missing_fields", []),
         })
 
+        if is_correction:
+            return f"[ok] {field} corrected. Now continue the current step ('{expected}')."
+
         # Transitions d'état selon le champ sauvegardé — retourne le prompt suivant
         if field == "first_name":
             return await advance_to(AgentPhase.GET_GENDER)
         elif field == "gender":
             return await advance_to(AgentPhase.GET_AGE)
         elif field == "age":
-            if state.profile.get("gender", "").lower() in ("féminin", "feminin", "female", "f"):
+            if state.profile.get("gender") == "féminin":
                 return await advance_to(AgentPhase.GET_PREGNANT)
             else:
                 return await advance_to(AgentPhase.GET_DISLIKES)
@@ -303,7 +336,28 @@ async def entrypoint(ctx: JobContext):
                 "top_2": state.current_top_2,
                 "bottom_2": state.current_bottom_2,
             })
-        return await advance_to(phase)
+        await advance_to(phase)
+        return _next_step_hint(phase)
+
+    def _next_step_hint(phase: AgentPhase) -> str:
+        """Consigne explicite renvoyée par l'outil. advance_to() met à jour les instructions
+        système, mais quand la phase ne change pas (2e justification : Q_JUSTIFY_POSITIVE →
+        Q_JUSTIFY_POSITIVE) un simple "[ok]" laisse le LLM croire l'étape finie : il sautait
+        la 2e justification et les choix « le moins »."""
+        if phase == AgentPhase.Q_JUSTIFY_POSITIVE:
+            choice = state.current_top_2[state.justify_index] if state.justify_index < len(state.current_top_2) else "?"
+            return (f'[ok] Next step NOW: ask the user why they chose "{choice}" ({answer_fmt.positive_label}). '
+                    "Then call justification_done. Do not skip this step.")
+        if phase == AgentPhase.Q_JUSTIFY_NEGATIVE:
+            choice = state.current_bottom_2[state.justify_index] if state.justify_index < len(state.current_bottom_2) else "?"
+            return (f'[ok] Next step NOW: ask the user why they chose "{choice}" ({answer_fmt.negative_label}). '
+                    "Then call justification_done. Do not skip this step.")
+        if phase == AgentPhase.Q_LEAST:
+            return (f"[ok] Next step NOW: ask for the {answer_fmt.negative_count} choice(s) "
+                    f"{answer_fmt.negative_label}, then call notify_bottom_2. Do not skip this step.")
+        if phase == AgentPhase.Q_CONFIRM:
+            return "[ok] Next step NOW: recap the choices and ask for confirmation, then call save_answer."
+        return "[ok]"
 
     def _choice_labels(question_id: int) -> list[str]:
         q = next((qq for qq in config["questions"] if qq["id"] == question_id), None)
@@ -313,12 +367,19 @@ async def entrypoint(ctx: JobContext):
         """Logique commune à l'outil notify_top_2 et au clic utilisateur (_handle_top_2_clicked) :
         enregistre les choix « le plus », notifie le frontend, passe à l'étape suivante."""
         # Numéro (« 4 ») ou libellé approximatif → libellé exact (sinon le front ne masque pas la carte)
-        top_2 = flow.resolve_choices(top_2, _choice_labels(question_id))
+        labels = _choice_labels(question_id)
+        top_2 = flow.resolve_choices(top_2, labels)
+        # Libellé inventé par le LLM (absent des cartes) : refusé plutôt qu'enregistré
+        if unknown := flow.unknown_choices(top_2, labels):
+            logger.warning(f"[Q] top_2 refusé, choix inconnu : {top_2}")
+            return unknown
         # Nombre de choix imposé par le format (1 pour Help) : « le 1 et le 2 » est refusé
         mismatch = flow.count_mismatch(top_2, answer_fmt.positive_count, answer_fmt.positive_label)
         if mismatch:
             logger.warning(f"[Q] top_2 refusé : {len(top_2)} choix, attendu {answer_fmt.positive_count}")
             return mismatch
+        if any(c in state.current_bottom_2 for c in top_2):
+            state.current_bottom_2 = []
         state.current_top_2 = top_2
         logger.info(f"[Q] top_2 q={question_id} top_2={top_2}")
         await send_state_update({
@@ -336,7 +397,11 @@ async def entrypoint(ctx: JobContext):
 
     async def _notify_bottom_2_now(question_id: int, bottom_2: list[str]) -> str:
         """Logique commune à l'outil notify_bottom_2 et au clic utilisateur (_handle_bottom_2_clicked)."""
-        bottom_2 = flow.resolve_choices(bottom_2, _choice_labels(question_id))
+        labels = _choice_labels(question_id)
+        bottom_2 = flow.resolve_choices(bottom_2, labels)
+        if unknown := flow.unknown_choices(bottom_2, labels):
+            logger.warning(f"[Q] bottom_2 refusé, choix inconnu : {bottom_2}")
+            return unknown
         overlap = [c for c in bottom_2 if c in state.current_top_2]
         if overlap:
             logger.warning(f"[Q] bottom_2 refusé, déjà choisi en top_2 : {overlap}")
@@ -384,6 +449,8 @@ async def entrypoint(ctx: JobContext):
     @function_tool()
     async def notify_asking_intensity():
         """Call ONCE, RIGHT BEFORE asking the user their fragrance intensity preference. / Appeler UNE SEULE FOIS, JUSTE AVANT de demander la préférence d'intensité."""
+        if error := _questionnaire_incomplete_error():
+            return error
         logger.info("[STATE] notify_asking_intensity")
         await send_state_update({
             "type": "step_asking_intensity",
@@ -394,6 +461,8 @@ async def entrypoint(ctx: JobContext):
     @function_tool()
     async def notify_asking_perfume_name(formula_type: str):
         """Call ONCE, right after the user answered their intensity preference, INSTEAD of calling generate_formulas directly. formula_type: 'frais', 'mix', or 'puissant'. Shows a text field on screen for the user to type their perfume's name — do NOT expect a spoken answer. / Appeler UNE SEULE FOIS, juste après que l'utilisateur ait répondu sur sa préférence d'intensité, À LA PLACE d'appeler generate_formulas directement. formula_type : 'frais', 'mix' ou 'puissant'. Affiche un champ de texte à l'écran pour que l'utilisateur tape le nom de son parfum — n'attendez pas de réponse orale."""
+        if error := _questionnaire_incomplete_error():
+            return error
         state.formula_type = formula_type
         logger.info(f"[STATE] notify_asking_perfume_name type={formula_type}")
         await send_state_update({
@@ -409,6 +478,18 @@ async def entrypoint(ctx: JobContext):
         if state.phase != AgentPhase.Q_CONFIRM:
             logger.warning(f"[Q] save_answer appelé en dehors de Q_CONFIRM (state={state.phase.name}) — ignoré")
             return t("cannot_save_answer", lang)
+
+        # Source de vérité : les choix enregistrés via notify_top_2/notify_bottom_2, que l'écran
+        # affiche. Si le LLM passe d'autres valeurs (changement d'avis au récap non notifié),
+        # on refuse : sinon la base et les cartes à l'écran divergent.
+        if (flow.resolve_choices(top_2, _choice_labels(question_id)) != state.current_top_2
+                or flow.resolve_choices(bottom_2, _choice_labels(question_id)) != state.current_bottom_2):
+            logger.warning(f"[Q] save_answer refusé : args {top_2}/{bottom_2} ≠ état {state.current_top_2}/{state.current_bottom_2}")
+            return ("[rejected] These choices differ from the recorded ones "
+                    f"({state.current_top_2} / {state.current_bottom_2}). If the user changed their mind, call "
+                    "notify_top_2 or notify_bottom_2 with the new complete selection first (the flow will continue "
+                    "from there); otherwise call save_answer again with the recorded choices.")
+        top_2, bottom_2 = state.current_top_2, state.current_bottom_2
 
         resp = await http.post(
             f"/api/session/{session_id}/save-answer",
@@ -472,6 +553,9 @@ async def entrypoint(ctx: JobContext):
         )
         if resp.status_code != 200:
             detail = resp.json().get("detail", t("unable_to_generate_formulas", lang))
+            logger.error(f"[FORMULAS] génération échouée ({resp.status_code}) : {detail}")
+            # Sinon le front reste indéfiniment sur l'écran de génération
+            await send_state_update({"type": "state_change", "state": "questionnaire"})
             return err(detail, lang)
         data = resp.json()
         await send_state_update({

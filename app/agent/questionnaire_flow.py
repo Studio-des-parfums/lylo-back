@@ -22,11 +22,14 @@ def after_positive_choices(fmt: AnswerFormat, state: SessionState) -> AgentPhase
     if fmt.positive_justify:
         state.justify_index = 0
         return AgentPhase.Q_JUSTIFY_POSITIVE
-    return after_positive_justifications(fmt)
+    return after_positive_justifications(fmt, state)
 
 
-def after_positive_justifications(fmt: AnswerFormat) -> AgentPhase:
-    return AgentPhase.Q_LEAST if fmt.negative_count > 0 else AgentPhase.Q_CONFIRM
+def after_positive_justifications(fmt: AnswerFormat, state: SessionState | None = None) -> AgentPhase:
+    # Choix « le moins » déjà donnés (changement d'avis au récapitulatif) : on n'les redemande pas
+    if fmt.negative_count > 0 and not (state and state.current_bottom_2):
+        return AgentPhase.Q_LEAST
+    return AgentPhase.Q_CONFIRM
 
 
 def after_negative_choices(fmt: AnswerFormat, state: SessionState) -> AgentPhase:
@@ -42,7 +45,7 @@ def after_justification(fmt: AnswerFormat, state: SessionState) -> AgentPhase:
         if state.justify_index + 1 < len(state.current_top_2):
             state.justify_index += 1
             return AgentPhase.Q_JUSTIFY_POSITIVE
-        return after_positive_justifications(fmt)
+        return after_positive_justifications(fmt, state)
     if state.phase == AgentPhase.Q_JUSTIFY_NEGATIVE:
         if state.justify_index + 1 < len(state.current_bottom_2):
             state.justify_index += 1
@@ -81,8 +84,13 @@ def resolve_choices(values: list, labels: list[str]) -> list[str]:
     for raw in values:
         text = _normalize(str(raw))
         label = None
+        prefixed = re.match(r"(\d+)\s*[.)\-:]\s+\S", text)
         if text in norm_labels:
             label = labels[norm_labels.index(text)]
+        elif prefixed and 1 <= int(prefixed.group(1)) <= len(labels):
+            # « 1. Libellé » (recopié de la liste numérotée, parfois avec un libellé
+            # approximatif voire inventé) : le numéro de carte fait foi.
+            label = labels[int(prefixed.group(1)) - 1]
         else:
             m = re.fullmatch(r"(?:(?:le|la|choix|numero|number|n°|no|#)\s*)*(\d+|[a-z]+)\.?", text)
             n = None
@@ -97,6 +105,21 @@ def resolve_choices(values: list, labels: list[str]) -> list[str]:
         if label not in out:
             out.append(label)
     return out
+
+
+def unknown_choices(choices: list[str], labels: list[str]) -> str | None:
+    """Message de refus pour le LLM si un choix ne correspond à aucune carte (libellé
+    halluciné) ; None si tous les choix sont des libellés exacts."""
+    unknown = [c for c in choices if c not in labels]
+    if not unknown or not labels:
+        return None
+    numbered = " ; ".join(f"{i}. {l}" for i, l in enumerate(labels, 1))
+    return (
+        f"[rejected] {unknown} is not one of this question's choices. Nothing was recorded. "
+        f"The only choices are (card number. label): {numbered}. Map the user's answer to one of "
+        f"these (by card number or meaning) and call the tool again with the exact label. "
+        f"If you cannot tell which one they meant, ask them briefly."
+    )
 
 
 def count_mismatch(choices: list[str], expected: int, label: str) -> str | None:
