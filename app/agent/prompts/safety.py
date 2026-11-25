@@ -38,6 +38,12 @@ def get_gender(ctx: PromptContext) -> str:
         mission = f"Имя пользователя {first_name}. Естественно спроси, мужское это имя или женское, например: 'Красивое имя! Это скорее мужское или женское имя?' Как только он(а) ответит, СРАЗУ вызови save_user_profile(field='gender', value='masculin') или save_user_profile(field='gender', value='féminin')."
     else:
         mission = f"Le prénom de l'utilisateur est {first_name}. Demandez naturellement si c'est un prénom masculin ou féminin, par exemple : 'Joli prénom ! C'est plutôt masculin ou féminin ?' Dès qu'il/elle répond, appelez IMMÉDIATEMENT save_user_profile(field='gender', value='masculin') ou save_user_profile(field='gender', value='féminin')."
+    mission += (
+        "\n\nThis step is REQUIRED: the perfume recommendation is completely different for a masculine or a "
+        "feminine profile. Only masculine or feminine can be recorded. If the user answers anything else "
+        "(neither, prefers not to say, off-topic), kindly explain why you need it and ask again; never move on "
+        "without it. If the answer contains extra words (\"c'est bien, masculin\"), extract the gender."
+    )
     return mission
 
 

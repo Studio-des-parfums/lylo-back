@@ -87,3 +87,28 @@ def test_count_mismatch():
     msg = count_mismatch(["A", "B"], 1, "Ce qui vous représente le plus")
     assert msg and msg.startswith("[rejected]") and "ONE choice" in msg
     assert count_mismatch(["A"], 2, "x").startswith("[rejected]")
+
+
+HELP_LABELS = ["Lance les idées", "Construit le plan", "Fédère l'équipe", "Anticipe les risques"]
+
+
+def test_resolve_numbered_label_uses_card_number():
+    # Libellé inventé par le LLM mais préfixé du numéro de carte : le numéro fait foi
+    assert flow.resolve_choices(["1. Je fonce, tête baissée"], HELP_LABELS) == ["Lance les idées"]
+    assert flow.resolve_choices(["3) Je suis plus en retrait"], HELP_LABELS) == ["Fédère l'équipe"]
+
+
+def test_unknown_choices_rejected():
+    resolved = flow.resolve_choices(["Je fonce, tête baissée"], HELP_LABELS)
+    msg = flow.unknown_choices(resolved, HELP_LABELS)
+    assert msg and msg.startswith("[rejected]") and "1. Lance les idées" in msg
+    assert flow.unknown_choices(["Construit le plan"], HELP_LABELS) is None
+
+
+def test_change_of_favorite_at_recap_skips_least_step():
+    fmt = AnswerFormat(positive_count=1, negative_count=1)
+    state = SessionState(phase=P.Q_JUSTIFY_POSITIVE, current_top_2=["B"], current_bottom_2=["C"])
+    # « le moins » déjà donné : après la justification du nouveau choix, retour au récap
+    assert flow.after_justification(fmt, state) == P.Q_CONFIRM
+    state = SessionState(phase=P.Q_JUSTIFY_POSITIVE, current_top_2=["B"], current_bottom_2=[])
+    assert flow.after_justification(fmt, state) == P.Q_LEAST

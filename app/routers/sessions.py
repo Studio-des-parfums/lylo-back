@@ -548,6 +548,11 @@ async def send_formula_mail_by_reference(
         updates["customer_email"] = target_email
     if target_name and target_name != (db_formula.customer_name or ""):
         updates["customer_name"] = target_name
+    # Champs optionnels : on n'écrase une valeur existante que si une nouvelle est fournie.
+    for field, column in (("company", "customer_company"), ("job_title", "customer_job_title")):
+        value = (getattr(body, field) or "").strip()
+        if value and value != (getattr(db_formula, column) or ""):
+            updates[column] = value
     if updates:
         db_formula = await crud.update_generated_formula_by_reference(db, reference, **updates)
         if not db_formula:
@@ -620,6 +625,8 @@ async def list_formulas(
                 "sizes": r.sizes,
                 "customer_name": r.customer_name,
                 "customer_email": r.customer_email,
+                "customer_company": r.customer_company,
+                "customer_job_title": r.customer_job_title,
                 "language": r.language,
                 "moodboard_notes_key": r.moodboard_notes_key,
                 "moodboard_image_url": r.moodboard_image_url,
@@ -642,7 +649,7 @@ async def save_formula(
     formula = body.formula
     db_formula = await crud.create_generated_formula(
         db,
-        session_id=formula.get("session_id") or "quiz",
+        session_id=formula.get("session_id") or ("quiz-multi" if body.participant_color else "quiz"),
         profile=formula.get("profile"),
         formula_type=formula.get("formula_type"),
         top_notes=formula.get("top_notes"),
@@ -656,6 +663,7 @@ async def save_formula(
         perfume_name=formula.get("perfume_name"),
         **_extract_moodboard_fields(formula),
         participant_id=body.participant_id,
+        participant_color=body.participant_color,
     )
 
     if not db_formula.moodboard_image_url:
@@ -692,6 +700,10 @@ async def replace_note_stateless(
             base_notes=updated.get("base_notes"),
             sizes=updated.get("sizes"),
         )
+
+    # Mode vocal : garde l'état de session (lu par l'agent via l'API) aligné sur l'écran.
+    if body.session_id and session_store.get_selected_formula(body.session_id):
+        session_store.save_selected_formula(body.session_id, result["formula"])
 
     return result
 

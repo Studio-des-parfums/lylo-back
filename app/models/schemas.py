@@ -94,6 +94,8 @@ class SendFormulaByReferenceRequest(BaseModel):
     email: str | None = None
     first_name: str | None = None
     last_name: str | None = None
+    company: str | None = None
+    job_title: str | None = None
 
 
 class SaveFormulaRequest(BaseModel):
@@ -101,6 +103,9 @@ class SaveFormulaRequest(BaseModel):
     customer_name: str | None = None
     customer_email: str | None = None
     participant_id: int | None = None
+    # Mode duo : couleur choisie par la personne (chaque participant enregistre sa formule
+    # individuellement, depuis son propre écran final).
+    participant_color: str | None = None
     language: SupportedLanguage = "fr"
     input_mode: str = "quiz"
 
@@ -120,6 +125,9 @@ class ReplaceNoteStatelessRequest(BaseModel):
     # choisi une carte) — permet de répercuter la note modifiée sur l'enregistrement
     # existant plutôt que de le laisser périmé.
     reference: str | None = None
+    # Mode vocal : session LiveKit en cours — la formule sélectionnée côté session est aussi
+    # mise à jour, pour que l'agent voie la note remplacée au clic.
+    session_id: str | None = None
     # Marque : choisit le coffret de notes (descriptions, booster recalculé)
     brand: BrandSlug | None = None
 
