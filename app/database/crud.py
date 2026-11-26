@@ -338,6 +338,8 @@ async def get_formulas(
                 GeneratedFormula.reference.ilike(pattern),
                 GeneratedFormula.customer_email.ilike(pattern),
                 GeneratedFormula.customer_company.ilike(pattern),
+                GeneratedFormula.customer_name.ilike(pattern),
+                GeneratedFormula.perfume_name.ilike(pattern),
             )
         )
     total_result = await db.execute(select(func.count()).select_from(query.subquery()))
