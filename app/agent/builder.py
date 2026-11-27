@@ -12,6 +12,10 @@ def get_prompt(state: SessionState, config: dict, ai_name: str, lang: SupportedL
     mission = profile.mission(ctx) or t("continue_naturally", lang)
     if state.phase in _GUIDED_PHASES:
         mission += _STAY_ON_STEP
+        if _is_masculine(state):
+            # Le rappel ci-dessus liste les champs obligatoires : sans cette précision, le LLM
+            # posait la question de la grossesse à un profil masculin (étape pourtant sautée).
+            mission += _NO_PREGNANCY_QUESTION
     return f"{profile.personality(ctx)}\n\n--- MISSION ACTUELLE ---\n\n{mission}"
 
 
@@ -27,7 +31,21 @@ _GUIDED_PHASES = {
 _STAY_ON_STEP = (
     "\n\nSTAY ON THIS STEP: the journey is driven by the application. Only do what this mission asks. "
     "If the answer is unclear, does not fit or the user refuses, kindly explain why it is needed and ask the "
-    "same question again: first name, gender, age, pregnancy, disliked notes and allergies are REQUIRED and "
+    "same question again: first name, gender, age, pregnancy (feminine profiles only), disliked notes and "
+    "allergies are REQUIRED and "
     "can never be skipped. Never ask about perfume tastes, notes, olfactory families or intensity on your own, "
     "and never skip ahead: the application asks those questions at the right time."
+)
+
+
+_MASCULINE_VALUES = {"masculin", "male", "homme", "man", "m"}
+
+
+def _is_masculine(state: SessionState) -> bool:
+    return (state.profile.get("gender") or "").strip().lower() in _MASCULINE_VALUES
+
+
+_NO_PREGNANCY_QUESTION = (
+    "\n\nThe user's profile is MASCULINE: NEVER ask whether they are pregnant or breastfeeding — "
+    "that step does not apply and has already been skipped."
 )

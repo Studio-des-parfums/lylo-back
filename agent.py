@@ -242,6 +242,15 @@ async def entrypoint(ctx: JobContext):
         old = state.phase
         state.phase = new_phase
         logger.info(f"[STATE] {old.name} → {new_phase.name}")
+        if new_phase == AgentPhase.Q_FAVORITES and old != AgentPhase.Q_FAVORITES:
+            # Cartes cliquables dès le début de la question, sans attendre que le LLM appelle
+            # notify_asking_top_2 : il l'appelait parfois APRÈS avoir posé la question (voire
+            # après la réponse orale) — impossible de cliquer pendant la 1re question.
+            questions = config.get("questions", [])
+            if state.current_question_index < len(questions):
+                qid = questions[state.current_question_index]["id"]
+                logger.info(f"[Q] step_asking_top_2 envoyé à l'entrée de l'étape q={qid}")
+                await send_state_update({"type": "step_asking_top_2", "state": "questionnaire", "question_id": qid})
         prompt = get_prompt(state, config, ai_name, lang, input_mode)
         await agent.update_instructions(prompt)
         # Return a minimal acknowledgment — the LLM will generate its reply
