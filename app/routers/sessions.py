@@ -332,6 +332,8 @@ async def select_formula(
             sizes=None,
             customer_name=customer_name,
             customer_email=profile.get("email"),
+            customer_gender=profile.get("gender"),
+            customer_first_name=profile.get("first_name"),
             language=meta.get("language"),
             input_mode=meta.get("input_mode"),
             participant_id=meta.get("participant_id"),
@@ -353,6 +355,8 @@ async def select_formula(
             sizes=formula.get("sizes"),
             customer_name=customer_name,
             customer_email=profile.get("email"),
+            customer_gender=profile.get("gender"),
+            customer_first_name=profile.get("first_name"),
             language=meta.get("language"),
             input_mode=meta.get("input_mode"),
             perfume_name=formula.get("perfume_name") or profile.get("perfume_name"),
@@ -549,7 +553,11 @@ async def send_formula_mail_by_reference(
     if target_name and target_name != (db_formula.customer_name or ""):
         updates["customer_name"] = target_name
     # Champs optionnels : on n'écrase une valeur existante que si une nouvelle est fournie.
-    for field, column in (("company", "customer_company"), ("job_title", "customer_job_title")):
+    for field, column in (
+        ("first_name", "customer_first_name"),
+        ("company", "customer_company"),
+        ("job_title", "customer_job_title"),
+    ):
         value = (getattr(body, field) or "").strip()
         if value and value != (getattr(db_formula, column) or ""):
             updates[column] = value
@@ -573,6 +581,8 @@ async def send_formula_mail_by_reference(
         "sizes": db_formula.sizes,
         "customer_name": db_formula.customer_name,
         "customer_email": db_formula.customer_email,
+        "customer_gender": db_formula.customer_gender,
+        "perfume_name": db_formula.perfume_name,
         "language": db_formula.language,
         "participant_id": db_formula.participant_id,
         "owner_type": db_formula.owner_type,
@@ -627,6 +637,10 @@ async def list_formulas(
                 "customer_email": r.customer_email,
                 "customer_company": r.customer_company,
                 "customer_job_title": r.customer_job_title,
+                # Lignes antérieures à la colonne : on retombe sur le 1er mot de customer_name.
+                "customer_first_name": r.customer_first_name
+                or ((r.customer_name or "").split() or [None])[0],
+                "perfume_name": r.perfume_name,
                 "language": r.language,
                 "moodboard_notes_key": r.moodboard_notes_key,
                 "moodboard_image_url": r.moodboard_image_url,

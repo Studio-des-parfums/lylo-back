@@ -1,4 +1,5 @@
 import base64
+import html as _html
 import logging
 import time
 from pathlib import Path
@@ -225,6 +226,8 @@ _MOCK_FORMULA_TEST = {
 _LABELS: dict[str, dict[str, str]] = {
     "fr": {
         "subject": "Votre formule de parfum personnalisée",
+        "subject_named": "Votre parfum « {name} »",
+        "eyebrow": "Parfum sur mesure",
         "greeting": "Bonjour,",
         "subtext": "Voici votre formule de parfum personnalisée.",
         "top": "Notes de tête",
@@ -234,6 +237,8 @@ _LABELS: dict[str, dict[str, str]] = {
     },
     "en": {
         "subject": "Your personalized fragrance formula",
+        "subject_named": "Your fragrance “{name}”",
+        "eyebrow": "Bespoke fragrance",
         "greeting": "Hello,",
         "subtext": "Here is your personalized fragrance formula.",
         "top": "Top notes",
@@ -247,6 +252,7 @@ _LABELS: dict[str, dict[str, str]] = {
 _CATALOG_LABELS: dict[str, dict[str, str]] = {
     "fr": {
         "subject": "Votre sélection de parfums",
+        "eyebrow": "Sélection olfactive",
         "greeting": "Bonjour,",
         "subtext": "Voici le parfum sélectionné pour vous.",
         "top": "Notes de tête",
@@ -256,6 +262,7 @@ _CATALOG_LABELS: dict[str, dict[str, str]] = {
     },
     "en": {
         "subject": "Your perfume selection",
+        "eyebrow": "Olfactory selection",
         "greeting": "Hello,",
         "subtext": "Here is the perfume selected for you.",
         "top": "Top notes",
@@ -264,6 +271,129 @@ _CATALOG_LABELS: dict[str, dict[str, str]] = {
         "goodbye": "Thank you for your visit. We hope to see you again very soon. See you soon!",
     },
 }
+
+
+# ── Mail client « luxe » ─────────────────────────────────────────────────────
+# Mise en page en tables + styles inline (seul format fiable dans Gmail/Outlook) : fond ivoire,
+# carte encadrée d'un double filet doré sur les côtés, typographie serif.
+_GOLD = "#b8975a"
+_INK = "#2b2621"
+_MUTED = "#8a8178"
+_SERIF = "Georgia,'Times New Roman',Times,serif"
+
+_CIVILITY = {
+    "fr": {"m": "Monsieur", "f": "Madame"},
+    "en": {"m": "Mr", "f": "Mrs"},
+}
+_FEMININE_VALUES = {"féminin", "feminin", "female", "f", "femme"}
+_MASCULINE_VALUES = {"masculin", "male", "m", "homme"}
+
+
+def _esc(value) -> str:
+    """Échappe les valeurs saisies par le visiteur (nom du parfum, prénom…) avant de les injecter."""
+    return _html.escape(str(value or "").strip())
+
+
+def _greeting(language: str, gender: str | None, customer_name: str | None, default: str) -> str:
+    """« Madame Marie Dupont, » / « Monsieur, » ; retombe sur « Bonjour Marie, » / « Bonjour, »
+    quand le genre est inconnu (mode quiz : la question n'est pas posée)."""
+    civ = _CIVILITY.get(language, _CIVILITY["fr"])
+    g = (gender or "").strip().lower()
+    title = civ["f"] if g in _FEMININE_VALUES else civ["m"] if g in _MASCULINE_VALUES else None
+    name = _esc(customer_name)
+    if title:
+        return f"{title} {name}," if name else f"{title},"
+    if name:
+        return f"{default.rstrip(',').strip()} {name},"
+    return default
+
+
+def _lux_note_section(title: str, names: list[str]) -> str:
+    if not names:
+        return ""
+    items = " &nbsp;·&nbsp; ".join(_esc(n) for n in names)
+    return (
+        f'<tr><td align="center" style="padding:0 0 22px;">'
+        f'<p style="margin:0 0 8px;font-family:{_SERIF};font-size:11px;letter-spacing:3px;'
+        f'text-transform:uppercase;color:{_GOLD};">{_esc(title)}</p>'
+        f'<p style="margin:0;font-family:{_SERIF};font-size:16px;line-height:1.6;color:{_INK};">{items}</p>'
+        f"</td></tr>"
+    )
+
+
+def _lux_divider() -> str:
+    return (
+        f'<tr><td align="center" style="padding:6px 0 26px;">'
+        f'<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>'
+        f'<td style="width:48px;border-top:1px solid {_GOLD};font-size:0;line-height:0;">&nbsp;</td>'
+        f'<td style="padding:0 10px;font-family:{_SERIF};font-size:12px;color:{_GOLD};line-height:1;">&#9670;</td>'
+        f'<td style="width:48px;border-top:1px solid {_GOLD};font-size:0;line-height:0;">&nbsp;</td>'
+        f"</tr></table></td></tr>"
+    )
+
+
+def _build_lux_html(
+    *,
+    language: str,
+    eyebrow: str,
+    greeting: str,
+    subtext: str,
+    title: str,
+    subtitle: str,
+    description: str,
+    notes_rows: str,
+    goodbye: str,
+) -> str:
+    subtitle_html = (
+        f'<p style="margin:10px 0 0;font-family:{_SERIF};font-size:12px;letter-spacing:3px;'
+        f'text-transform:uppercase;color:{_MUTED};">{subtitle}</p>'
+        if subtitle else ""
+    )
+    description_html = (
+        f'<tr><td align="center" style="padding:0 0 26px;font-family:{_SERIF};font-style:italic;'
+        f'font-size:15px;line-height:1.7;color:{_MUTED};">{description}</td></tr>'
+        if description else ""
+    )
+    return f"""<!DOCTYPE html>
+<html lang="{language}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{title}</title>
+</head>
+<body style="margin:0;padding:0;background:#f4efe6;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4efe6;">
+    <tr><td align="center" style="padding:40px 12px;">
+      <!-- Cadre extérieur : double filet doré sur les côtés -->
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
+             style="width:100%;max-width:600px;background:#fffdf8;border-left:4px double {_GOLD};border-right:4px double {_GOLD};border-top:1px solid {_GOLD};border-bottom:1px solid {_GOLD};">
+        <tr><td style="padding:10px;">
+          <!-- Filet intérieur -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                 style="border-left:1px solid #e6d9bf;border-right:1px solid #e6d9bf;">
+            <tr><td style="padding:44px 40px 40px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr><td align="center" style="padding:0 0 30px;font-family:{_SERIF};font-size:11px;letter-spacing:4px;text-transform:uppercase;color:{_GOLD};">{eyebrow}</td></tr>
+                <tr><td style="padding:0 0 6px;font-family:{_SERIF};font-size:17px;color:{_INK};">{greeting}</td></tr>
+                <tr><td style="padding:0 0 34px;font-family:{_SERIF};font-size:15px;line-height:1.7;color:{_MUTED};">{subtext}</td></tr>
+                <tr><td align="center" style="padding:0 0 22px;">
+                  <p style="margin:0;font-family:{_SERIF};font-size:32px;font-style:italic;line-height:1.25;color:{_INK};">{title}</p>
+                  {subtitle_html}
+                </td></tr>
+                {_lux_divider()}
+                {description_html}
+                {notes_rows}
+                {_lux_divider()}
+                <tr><td align="center" style="font-family:{_SERIF};font-style:italic;font-size:14px;line-height:1.8;color:{_MUTED};">{goodbye}</td></tr>
+              </table>
+            </td></tr>
+          </table>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""
 
 
 def _render_catalog_note_section(title: str, notes: list[str]) -> str:
@@ -285,35 +415,22 @@ def _render_catalog_note_section(title: str, notes: list[str]) -> str:
 def _build_catalog_formula_html(formula: dict, language: str = "fr") -> str:
     """Build the perfume email HTML for a catalog match (Esther) — no sizes/ml."""
     labels = _CATALOG_LABELS.get(language, _CATALOG_LABELS["fr"])
-    brand = formula.get("brand", "")
-    name = formula.get("name", "")
-    title = f"{name} — {brand}" if brand else name
-    match_reason = formula.get("match_reason", "")
-
-    notes_html = (
-        _render_catalog_note_section(labels["top"], formula.get("top_notes", []))
-        + _render_catalog_note_section(labels["heart"], formula.get("heart_notes", []))
-        + _render_catalog_note_section(labels["base"], formula.get("base_notes", []))
+    notes_rows = (
+        _lux_note_section(labels["top"], formula.get("top_notes") or [])
+        + _lux_note_section(labels["heart"], formula.get("heart_notes") or [])
+        + _lux_note_section(labels["base"], formula.get("base_notes") or [])
     )
-
-    return f"""<!DOCTYPE html>
-<html lang="{language}">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{title}</title>
-</head>
-<body style="font-family:Arial,sans-serif;background:#faf9f7;margin:0;padding:0;color:#333;">
-  <div style="max-width:600px;margin:0 auto;background:#ffffff;padding:40px 36px;">
-    <p style="font-size:1rem;margin:0 0 4px;">{labels["greeting"]}</p>
-    <p style="font-size:1rem;color:#666;margin:0 0 28px;">{labels["subtext"]}</p>
-    <p style="font-size:1.4rem;font-weight:bold;letter-spacing:0.04em;margin:0 0 6px;">{title}</p>
-    <p style="font-style:italic;color:#888;font-size:0.92rem;margin:0 0 28px;">{match_reason}</p>
-    {notes_html}
-    <p style="margin-top:40px;padding-top:24px;border-top:1px solid #efefef;font-size:0.88rem;color:#888;font-style:italic;line-height:1.6;">{labels["goodbye"]}</p>
-  </div>
-</body>
-</html>"""
+    return _build_lux_html(
+        language=language,
+        eyebrow=labels["eyebrow"],
+        greeting=_greeting(language, formula.get("customer_gender"), formula.get("customer_name"), labels["greeting"]),
+        subtext=labels["subtext"],
+        title=_esc(formula.get("name")),
+        subtitle=_esc(formula.get("brand")),
+        description=_esc(formula.get("match_reason")),
+        notes_rows=notes_rows,
+        goodbye=labels["goodbye"],
+    )
 
 
 def _build_catalog_internal_html(formula: dict) -> str:
@@ -379,40 +496,39 @@ def _build_formula_html(
     notes_30ml: dict,
     language: str = "fr",
     image_base_url: str = "",
+    perfume_name: str | None = None,
+    customer_name: str | None = None,
+    customer_gender: str | None = None,
 ) -> str:
-    """Build the formula email HTML. Image served via URL (no base64 embedding)."""
+    """Build the formula email HTML. Le nom donné par le visiteur est le titre ; le profil
+    olfactif passe en sous-titre (ou reste le titre si aucun nom n'a été donné)."""
     labels = _LABELS.get(language, _LABELS["fr"])
 
-    top = _top3_by_ml(notes_30ml.get("top_notes", []))
-    heart = _top3_by_ml(notes_30ml.get("heart_notes", []))
-    base = _top3_by_ml(notes_30ml.get("base_notes", []))
+    def names(key: str) -> list[str]:
+        return [n["name"] for n in _top3_by_ml(notes_30ml.get(key, []))]
 
-    notes_html = (
-        _render_note_section(labels["top"], top)
-        + _render_note_section(labels["heart"], heart)
-        + _render_note_section(labels["base"], base)
+    notes_rows = (
+        _lux_note_section(labels["top"], names("top_notes"))
+        + _lux_note_section(labels["heart"], names("heart_notes"))
+        + _lux_note_section(labels["base"], names("base_notes"))
+    )
+    has_name = bool((perfume_name or "").strip())
+    return _build_lux_html(
+        language=language,
+        eyebrow=labels["eyebrow"],
+        greeting=_greeting(language, customer_gender, customer_name, labels["greeting"]),
+        subtext=labels["subtext"],
+        title=_esc(perfume_name if has_name else profile),
+        subtitle=_esc(profile) if has_name else "",
+        description=_esc(description),
+        notes_rows=notes_rows,
+        goodbye=labels["goodbye"],
     )
 
-    content_html = notes_html
 
-    return f"""<!DOCTYPE html>
-<html lang="{language}">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{profile}</title>
-</head>
-<body style="font-family:Arial,sans-serif;background:#faf9f7;margin:0;padding:0;color:#333;">
-  <div style="max-width:600px;margin:0 auto;background:#ffffff;padding:40px 36px;">
-    <p style="font-size:1rem;margin:0 0 4px;">{labels["greeting"]}</p>
-    <p style="font-size:1rem;color:#666;margin:0 0 28px;">{labels["subtext"]}</p>
-    <p style="font-size:1.4rem;font-weight:bold;letter-spacing:0.04em;margin:0 0 6px;">{profile}</p>
-    <p style="font-style:italic;color:#888;font-size:0.92rem;margin:0 0 28px;">{description}</p>
-    {content_html}
-    <p style="margin-top:40px;padding-top:24px;border-top:1px solid #efefef;font-size:0.88rem;color:#888;font-style:italic;line-height:1.6;">{labels["goodbye"]}</p>
-  </div>
-</body>
-</html>"""
+def _formula_subject(labels: dict, perfume_name: str | None) -> str:
+    name = (perfume_name or "").strip()
+    return labels["subject_named"].format(name=name) if name else labels["subject"]
 
 
 def send_test_mail(to_email: str) -> None:
@@ -540,15 +656,20 @@ def send_mail(to_email: str, session_id: str, formula: dict) -> None:
 
     labels = _LABELS.get(language, _LABELS["fr"])
     notes_30ml = formula.get("sizes", {}).get("30ml", {})
+    user_profile = session_store.get_user_profile(session_id) or {}
+    perfume_name = formula.get("perfume_name") or user_profile.get("perfume_name")
     html = _build_formula_html(
         profile=formula.get("profile", ""),
         description=formula.get("description", ""),
         notes_30ml=notes_30ml,
         language=language,
         image_base_url=settings.backend_url,
+        perfume_name=perfume_name,
+        customer_name=" ".join(p for p in [user_profile.get("first_name"), user_profile.get("last_name")] if p) or None,
+        customer_gender=user_profile.get("gender"),
     )
 
-    _send_mail(to_email, labels["subject"], html)
+    _send_mail(to_email, _formula_subject(labels, perfume_name), html)
 
 
 def send_formula_mail_stateless(to_email: str, formula: dict, language: str = "fr") -> None:
@@ -564,16 +685,20 @@ def send_formula_mail_stateless(to_email: str, formula: dict, language: str = "f
         html = _build_catalog_formula_html(formula, language=language)
     else:
         labels = _LABELS.get(language, _LABELS["fr"])
-        notes_30ml = formula.get("sizes", {}).get("30ml", {})
+        notes_30ml = (formula.get("sizes") or {}).get("30ml", {})
         html = _build_formula_html(
             profile=formula.get("profile", ""),
             description=formula.get("description", ""),
             notes_30ml=notes_30ml,
             language=language,
             image_base_url=settings.backend_url,
+            perfume_name=formula.get("perfume_name"),
+            customer_name=formula.get("customer_name"),
+            customer_gender=formula.get("customer_gender"),
         )
 
-    _send_mail(to_email, labels["subject"], html)
+    subject = labels["subject"] if is_catalog else _formula_subject(labels, formula.get("perfume_name"))
+    _send_mail(to_email, subject, html)
 
     internal_email = settings.internal_email
     if not internal_email:
