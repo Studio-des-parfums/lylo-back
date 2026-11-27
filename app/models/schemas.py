@@ -16,6 +16,9 @@ class StartSessionRequest(BaseModel):
     email: str | None = None
     owner_email: str | None = None
     avatar: bool = True
+    # Capacité du client : accompagner physiquement le visiteur jusqu'à ce lieu en fin de
+    # parcours (ex. tablette d'un robot). Absent = l'agent ne propose jamais l'accompagnement.
+    guide_destination: str | None = Field(default=None, max_length=100)
 
 
 class StartSessionResponse(BaseModel):

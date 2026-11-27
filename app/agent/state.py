@@ -26,6 +26,8 @@ class AgentPhase(Enum):
     PRESENT_FORMULAS = auto()
     # Phase 4 — Personnalisation / Découverte
     CUSTOMIZATION = auto()
+    # Accompagnement physique jusqu'au lieu annoncé par le client (voir prompts/guide.py)
+    GUIDING = auto()
     # Phase 5 — Fin
     STANDBY = auto()
 
@@ -42,3 +44,6 @@ class SessionState:
     formula_type: str | None = None
     perfume_name: str | None = None
     selected_formula_index: int | None = None
+    # Accompagnement : None (pas encore) | "moving" | "arrived" | "failed"
+    guide_status: str | None = None
+    guide_error: str | None = None

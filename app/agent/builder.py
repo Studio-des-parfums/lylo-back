@@ -1,6 +1,7 @@
 """Prompt système de l'agent : personnalité de la marque + mission de la phase courante."""
 from app.agent.brands.registry import get_brand_profile
 from app.agent.i18n import t
+from app.agent.prompts import guide
 from app.agent.prompts.context import PromptContext
 from app.agent.state import AgentPhase, SessionState
 from app.core.languages import SupportedLanguage
@@ -16,6 +17,9 @@ def get_prompt(state: SessionState, config: dict, ai_name: str, lang: SupportedL
             # Le rappel ci-dessus liste les champs obligatoires : sans cette précision, le LLM
             # posait la question de la grossesse à un profil masculin (étape pourtant sautée).
             mission += _NO_PREGNANCY_QUESTION
+    if state.phase == AgentPhase.CUSTOMIZATION:
+        # Client capable d'accompagner le visiteur : la proposition remplace l'au revoir.
+        mission += guide.offer_addendum(ctx)
     return f"{profile.personality(ctx)}\n\n--- MISSION ACTUELLE ---\n\n{mission}"
 
 
