@@ -334,11 +334,24 @@ def _current(items: list[str], index: int) -> str:
     return items[index] if index < len(items) else "?"
 
 
+# 1re question uniquement : dire au visiteur qu'il peut répondre à l'oral OU en touchant les cartes.
+FIRST_QUESTION_HINT = {
+    "fr": "C'est la PREMIÈRE question : en la posant, précisez brièvement (une courte phrase) que l'utilisateur peut répondre à voix haute OU en touchant directement les choix à l'écran.",
+    "en": "This is the FIRST question: when asking it, briefly mention (one short sentence) that the user can answer out loud OR by tapping the choices on the screen.",
+    "es": "Es la PRIMERA pregunta: al hacerla, indique brevemente (una frase corta) que el usuario puede responder en voz alta O tocando directamente las opciones en la pantalla.",
+    "de": "Das ist die ERSTE Frage: Erwähne dabei kurz (ein kurzer Satz), dass der Nutzer laut antworten ODER die Auswahl direkt auf dem Bildschirm antippen kann.",
+    "ar": "هذا هو السؤال الأول: عند طرحه، اذكر باختصار (جملة قصيرة) أن المستخدم يمكنه الإجابة بصوت عالٍ أو بلمس الخيارات مباشرة على الشاشة.",
+    "ru": "Это ПЕРВЫЙ вопрос: задавая его, кратко скажи (одной короткой фразой), что пользователь может ответить вслух ИЛИ нажать на варианты прямо на экране.",
+}
+
+
 def q_favorites(ctx: PromptContext) -> str:
     tpl, b = _parts(ctx)
     fmt = answer_format(ctx.config)
     n = fmt.positive_count
     mission = tpl.favorites.format(**b, count=_count(tpl, n), label=fmt.positive_label, example=_example(tpl, n))
+    if ctx.state.current_question_index == 0:
+        mission += "\n\n" + FIRST_QUESTION_HINT.get(ctx.lang, FIRST_QUESTION_HINT["fr"])
     return mission + "\n\n" + NUMBER_HINT.get(ctx.lang, NUMBER_HINT["fr"]) + _choices_reminder(b)
 
 

@@ -92,6 +92,7 @@ async def start_session(body: StartSessionRequest, db: AsyncSession = Depends(ge
             owner_type=owner_type,
             owner_id=owner_id,
             avatar=body.avatar,
+            guide_destination=(body.guide_destination or "").strip() or None,
         )
         logger.info(
             "[start_session] success session_id=%s room=%s",

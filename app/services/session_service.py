@@ -73,6 +73,7 @@ async def create_session(
     owner_type: str | None = None,
     owner_id: int | None = None,
     avatar: bool = True,
+    guide_destination: str | None = None,
 ) -> dict:
     settings = get_settings()
 
@@ -102,6 +103,7 @@ async def create_session(
         owner_type=owner_type,
         owner_id=owner_id,
         avatar=avatar,
+        guide_destination=guide_destination,
     )
     logger.info(
         "[session] session meta saved session_id=%s room=%s language=%s voice_gender=%s questions=%s mode=%s input_mode=%s brand=%s avatar=%s",

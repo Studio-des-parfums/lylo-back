@@ -30,6 +30,7 @@ def save_session_meta(
     owner_type: str | None = None,
     owner_id: int | None = None,
     avatar: bool = True,
+    guide_destination: str | None = None,
 ) -> None:
     mapping = {
         "language": language,
@@ -54,6 +55,9 @@ def save_session_meta(
         mapping["owner_type"] = owner_type
     if owner_id is not None:
         mapping["owner_id"] = owner_id
+    # Capacité d'accompagnement du client (voir app/agent/prompts/guide.py)
+    if guide_destination:
+        mapping["guide_destination"] = guide_destination
     with _lock:
         _meta[session_id] = mapping
         _index.add(session_id)

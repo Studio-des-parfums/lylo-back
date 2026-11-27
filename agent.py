@@ -18,6 +18,7 @@ from app.agent import questionnaire_flow as flow
 from app.agent import speech
 from app.agent import profile_validation
 from app.agent.i18n import err, t
+from app.agent.prompts import guide as guide_prompts
 from app.agent.state import AgentPhase, SessionState
 from app.config import get_settings
 from app.core.languages import SupportedLanguage
@@ -151,6 +152,8 @@ async def entrypoint(ctx: JobContext):
     brand_profile = get_brand_profile(brand)
     answer_fmt = flow.answer_format(config)
     use_avatar = [config.get("avatar", True)]
+    # Capacité annoncée par le client (ex. robot) : accompagner le visiteur jusqu'à ce lieu.
+    guide_dest = guide_prompts.guide_destination(config)
     _first_tts_call = [True]
 
     # Machine à états
@@ -242,6 +245,15 @@ async def entrypoint(ctx: JobContext):
         old = state.phase
         state.phase = new_phase
         logger.info(f"[STATE] {old.name} → {new_phase.name}")
+        if new_phase == AgentPhase.Q_FAVORITES and old != AgentPhase.Q_FAVORITES:
+            # Cartes cliquables dès le début de la question, sans attendre que le LLM appelle
+            # notify_asking_top_2 : il l'appelait parfois APRÈS avoir posé la question (voire
+            # après la réponse orale) — impossible de cliquer pendant la 1re question.
+            questions = config.get("questions", [])
+            if state.current_question_index < len(questions):
+                qid = questions[state.current_question_index]["id"]
+                logger.info(f"[Q] step_asking_top_2 envoyé à l'entrée de l'étape q={qid}")
+                await send_state_update({"type": "step_asking_top_2", "state": "questionnaire", "question_id": qid})
         prompt = get_prompt(state, config, ai_name, lang, input_mode)
         await agent.update_instructions(prompt)
         # Return a minimal acknowledgment — the LLM will generate its reply
@@ -672,6 +684,53 @@ async def entrypoint(ctx: JobContext):
         await send_state_update({"type": "state_change", "state": "standby"})
         return t("standby_activated", lang)
 
+    # ─── Accompagnement physique (capacité guide_destination du client) ────
+    # Le backend ne pilote pas le robot : il demande au client de partir (robot_navigate),
+    # puis attend robot_arrived / robot_failed sur le data channel (voir _on_data_received).
+
+    async def _start_guiding(notify_client: bool):
+        state.guide_status = "moving"
+        state.guide_error = None
+        _cancel_inactivity_shutdown("Accompagnement en cours")
+        # Pas d'écoute pendant le trajet : bruit des moteurs et passants déclencheraient l'agent.
+        session.input.set_audio_enabled(False)
+        if notify_client:
+            await send_state_update({"type": "robot_navigate", "destination": guide_dest})
+        logger.info(f"[GUIDE] Départ vers {guide_dest!r} (demandé par {'agent' if notify_client else 'client'})")
+
+    @function_tool()
+    async def guide_visitor():
+        """Physically accompanies the user to the destination. Call ONLY right after the user accepted to be accompanied. / Accompagne physiquement l'utilisateur jusqu'au lieu. Appeler UNIQUEMENT juste après que l'utilisateur a accepté d'être accompagné."""
+        if not guide_dest or state.guide_status is not None:
+            return "[guide unavailable or already done]"
+        await _start_guiding(notify_client=True)
+        return await advance_to(AgentPhase.GUIDING)
+
+    async def _handle_guide_event(kind: str, message: str | None = None):
+        """robot_navigation_started (clic manuel sur le client), robot_arrived, robot_failed."""
+        if kind == "started":
+            # Le visiteur a lancé le trajet lui-même : l'agent l'annonce au lieu de le proposer.
+            if paused[0] or state.guide_status is not None or state.phase not in (AgentPhase.CUSTOMIZATION, AgentPhase.STANDBY):
+                logger.info(f"[GUIDE] Départ manuel ignoré — phase={state.phase.name} paused={paused[0]}")
+                return
+            try:
+                session.interrupt(force=True)
+            except Exception:
+                pass
+            await _start_guiding(notify_client=False)
+        else:
+            if state.phase != AgentPhase.GUIDING or state.guide_status != "moving":
+                logger.info(f"[GUIDE] {kind} ignoré — phase={state.phase.name} status={state.guide_status}")
+                return
+            state.guide_status = "arrived" if kind == "arrived" else "failed"
+            state.guide_error = (message or "")[:200] or None
+            logger.info(f"[GUIDE] {state.guide_status} — {state.guide_error or ''}")
+        await advance_to(AgentPhase.GUIDING)
+        try:
+            await session.generate_reply()
+        except Exception as e:
+            logger.warning(f"[GUIDE] Échec réplique ({kind}): {e}")
+
     # ─── Collecte des tools ────────────────────────────────────────────────
     # Les choix top_2/bottom_2 sont désormais cliquables dans toute session vocale — pas
     # seulement en input_mode="click" — via notify_asking_top_2/notify_asking_bottom_2
@@ -689,6 +748,8 @@ async def entrypoint(ctx: JobContext):
         select_formula,
         enter_pause_mode,
     ]
+    if guide_dest:
+        all_tools.append(guide_visitor)
     if brand_profile.result_engine == "catalog":
         all_tools.append(generate_catalog_matches)
     else:
@@ -846,6 +907,9 @@ async def entrypoint(ctx: JobContext):
     def on_user_state_changed(ev):
         logger.info(f"[USER_STATE] {ev.old_state} → {ev.new_state} at {ev.created_at:.3f}")
         if ev.new_state == "away":
+            # Silence normal pendant l'accompagnement (micro coupé, visiteur qui marche).
+            if state.phase == AgentPhase.GUIDING and state.guide_status == "moving":
+                return
             if inactivity_shutdown_task[0] is None or inactivity_shutdown_task[0].done():
                 inactivity_shutdown_task[0] = asyncio.ensure_future(_shutdown_after_inactivity())
         else:
@@ -947,6 +1011,15 @@ async def entrypoint(ctx: JobContext):
                 name = (msg.get("name") or "").strip()
                 if name:
                     asyncio.ensure_future(_handle_perfume_name_submitted(name))
+
+            elif msg_type == "robot_navigation_started" and guide_dest:
+                asyncio.ensure_future(_handle_guide_event("started"))
+
+            elif msg_type == "robot_arrived" and guide_dest:
+                asyncio.ensure_future(_handle_guide_event("arrived"))
+
+            elif msg_type == "robot_failed" and guide_dest:
+                asyncio.ensure_future(_handle_guide_event("failed", msg.get("message")))
 
             elif msg_type == "questionnaire_top_2":
                 question_id = msg.get("question_id")
